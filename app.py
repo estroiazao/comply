@@ -3085,7 +3085,7 @@ def current_user_id():
 @app.route("/")
 def home():
     if not logged_in():
-        return redirect("/login")
+        return redirect("/landing")
     conn = get_db()
     user = conn.execute(
         "SELECT * FROM users WHERE id=?", (current_user_id(),)
