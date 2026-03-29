@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>COMPLY — Never Miss a Business Deadline Again</title>
+  <meta name="description" content="COMPLY automatically loads every tax, license, and compliance deadline for your business — based on your country, industry, and size. Free to start." />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink:     #0e0c0a;
+      --paper:   #f5f0e8;
+      --cream:   #ede8da;
+      --ruled:   #d8d0c0;
+      --accent:  #c84b2f;
+      --gold:    #c49a0a;
+      --muted:   #7a7060;
+      --white:   #ffffff;
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      overflow-x: hidden;
+    }
+
+    /* ── NOISE TEXTURE ── */
+    body::before {
+      content:'';
+      position:fixed; inset:0;
+      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+      pointer-events:none; z-index:999; opacity:0.5;
+    }
+
+    /* ── NAV ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.2rem 3rem;
+      border-bottom: 1.5px solid var(--ink);
+      position: sticky;
+      top: 0;
+      background: var(--paper);
+      z-index: 100;
+      animation: slideDown 0.5s ease both;
+    }
+
+    @keyframes slideDown { from{transform:translateY(-100%)} to{transform:translateY(0)} }
+
+    .nav-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.6rem;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+    }
+
+    .nav-logo span { color: var(--accent); font-style: italic; }
+
+    .nav-links { display: flex; align-items: center; gap: 2rem; }
+
+    .nav-link {
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-decoration: none;
+      letter-spacing: 0.05em;
+      transition: color 0.2s;
+    }
+
+    .nav-link:hover { color: var(--ink); }
+
+    .nav-cta {
+      background: var(--ink);
+      color: var(--paper);
+      padding: 0.55rem 1.3rem;
+      border-radius: 2px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      letter-spacing: 0.03em;
+    }
+
+    .nav-cta:hover { background: var(--accent); transform: translateY(-1px); }
+
+    /* ── HERO ── */
+    .hero {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 5rem 3rem 4rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-top: 1.5px solid var(--ink);
+      border-bottom: 1.5px solid var(--ink);
+      padding: 0.4rem 0;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.6s 0.1s ease both;
+    }
+
+    .eyebrow-dot {
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+    }
+
+    .hero-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2.8rem, 5vw, 4.2rem);
+      font-weight: 900;
+      line-height: 1.02;
+      letter-spacing: -0.01em;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.6s 0.2s ease both;
+    }
+
+    .hero-title em {
+      font-style: italic;
+      color: var(--accent);
+    }
+
+    .hero-sub {
+      font-size: 1.05rem;
+      color: var(--muted);
+      line-height: 1.7;
+      font-weight: 300;
+      max-width: 420px;
+      margin-bottom: 2.5rem;
+      animation: fadeUp 0.6s 0.3s ease both;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 1.2rem;
+      animation: fadeUp 0.6s 0.4s ease both;
+    }
+
+    .btn-primary {
+      background: var(--ink);
+      color: var(--paper);
+      padding: 0.85rem 2rem;
+      border-radius: 2px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      letter-spacing: 0.03em;
+    }
+
+    .btn-primary:hover { background: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(200,75,47,0.25); }
+
+    .btn-ghost {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: color 0.2s;
+    }
+
+    .btn-ghost:hover { color: var(--ink); }
+
+    @keyframes fadeUp { from{transform:translateY(16px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+    /* ── HERO VISUAL ── */
+    .hero-visual {
+      animation: fadeUp 0.7s 0.3s ease both;
+      position: relative;
+    }
+
+    .mock-app {
+      background: var(--ink);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.05);
+      transform: perspective(1000px) rotateY(-3deg) rotateX(2deg);
+      transition: transform 0.4s ease;
+    }
+
+    .mock-app:hover { transform: perspective(1000px) rotateY(0deg) rotateX(0deg); }
+
+    .mock-header {
+      background: #0a0806;
+      padding: 1rem 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .mock-logo { font-family:'Playfair Display',serif; font-size:1.1rem; color:#fff; }
+    .mock-logo span { color:#c49a0a; font-style:italic; }
+    .mock-badge { background:rgba(196,154,10,0.15); border:1px solid rgba(196,154,10,0.3); color:#c49a0a; font-size:0.6rem; padding:0.2rem 0.5rem; border-radius:10px; }
+
+    .mock-alert {
+      background: #fff8e6;
+      padding: 0.5rem 1.2rem;
+      font-size: 0.65rem;
+      color: #7a5500;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .mock-dot { width:5px;height:5px;background:#d94f3d;border-radius:50%;animation:blink 1.2s infinite; }
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+
+    .mock-body { padding: 1rem; }
+
+    .mock-progress { margin-bottom: 1rem; }
+    .mock-prog-label { display:flex;justify-content:space-between;font-size:0.58rem;color:#666;margin-bottom:0.3rem; }
+    .mock-prog-bar { height:5px;background:#222;border-radius:10px;overflow:hidden; }
+    .mock-prog-fill { height:100%;background:linear-gradient(90deg,#2a7d4f,#4ade80);width:62%;border-radius:10px; }
+
+    .mock-block { margin-bottom:0.8rem; }
+    .mock-block-head { background:#111;border-radius:5px 5px 0 0;padding:0.35rem 0.7rem;font-size:0.58rem;color:#666;display:flex;justify-content:space-between; }
+    .mock-block-body { background:#0f0f0f;border-radius:0 0 5px 5px;overflow:hidden; }
+
+    .mock-row {
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.55rem 0.7rem;
+      border-bottom: 1px solid #1a1a1a;
+      position: relative;
+    }
+
+    .mock-row:last-child { border-bottom: none; }
+    .mock-row::before { content:''; position:absolute; left:0;top:0;bottom:0;width:2.5px; }
+    .mock-row.urgent::before { background:#d94f3d; }
+    .mock-row.upcoming::before { background:#c49a0a; }
+    .mock-row.done::before { background:#333; }
+
+    .mock-date { text-align:center; }
+    .mock-month { display:block;font-size:0.45rem;text-transform:uppercase;color:#555;letter-spacing:0.1em; }
+    .mock-day { font-family:'Playfair Display',serif;font-size:1.1rem;line-height:1; }
+    .mock-row.urgent .mock-day { color:#d94f3d; }
+    .mock-row.done .mock-day { color:#333; }
+    .mock-row.upcoming .mock-day { color:#888; }
+
+    .mock-info { display:flex;flex-direction:column;gap:0.15rem; }
+    .mock-title { font-size:0.62rem;color:#ccc;font-weight:500; }
+    .mock-row.done .mock-title { text-decoration:line-through;color:#444; }
+    .mock-tag { font-size:0.45rem;text-transform:uppercase;padding:0.08rem 0.35rem;border-radius:10px;border:1px solid;width:fit-content; }
+    .mock-tag.tax { color:#d94f3d;border-color:#d94f3d; }
+    .mock-tag.license { color:#2b5fc9;border-color:#2b5fc9; }
+    .mock-tag.payroll { color:#7c3aed;border-color:#7c3aed; }
+
+    .mock-check { width:18px;height:18px;border-radius:50%;border:1.5px solid #333; }
+    .mock-check.done { background:#2a7d4f;border-color:#2a7d4f;display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.5rem; }
+
+    /* ── DIVIDER ── */
+    .section-divider {
+      border: none;
+      border-top: 1.5px solid var(--ink);
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    /* ── STATS BAR ── */
+    .stats-bar {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2.5rem 3rem;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+    }
+
+    .stat {
+      padding: 0 2rem;
+      border-right: 1.5px solid var(--ruled);
+    }
+
+    .stat:first-child { padding-left: 0; }
+    .stat:last-child { border-right: none; }
+
+    .stat-num {
+      font-family: 'Playfair Display', serif;
+      font-size: 2.5rem;
+      font-weight: 900;
+      color: var(--ink);
+      line-height: 1;
+      margin-bottom: 0.3rem;
+    }
+
+    .stat-num span { color: var(--accent); }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* ── HOW IT WORKS ── */
+    .how-section {
+      background: var(--ink);
+      color: var(--paper);
+      padding: 5rem 3rem;
+    }
+
+    .how-inner { max-width: 1100px; margin: 0 auto; }
+
+    .section-eyebrow {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .section-eyebrow::before { content:''; display:block; width:30px; height:1.5px; background:var(--gold); }
+
+    .section-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 900;
+      line-height: 1.1;
+      margin-bottom: 3.5rem;
+    }
+
+    .section-title em { font-style: italic; color: var(--gold); }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+    }
+
+    .step {
+      padding: 2.5rem;
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .step:last-child { border-right: none; }
+
+    .step-num {
+      font-family: 'Playfair Display', serif;
+      font-size: 3.5rem;
+      font-weight: 900;
+      color: rgba(255,255,255,0.08);
+      line-height: 1;
+      margin-bottom: 1rem;
+    }
+
+    .step-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 0.8rem;
+      color: #fff;
+    }
+
+    .step-desc {
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.5);
+      line-height: 1.7;
+      font-weight: 300;
+    }
+
+    .step-icon {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+
+    /* ── FEATURES ── */
+    .features-section {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 5rem 3rem;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5px;
+      background: var(--ruled);
+      border: 1.5px solid var(--ruled);
+      margin-top: 3rem;
+    }
+
+    .feature {
+      background: var(--paper);
+      padding: 2rem;
+      transition: background 0.2s;
+    }
+
+    .feature:hover { background: var(--cream); }
+
+    .feature-icon { font-size: 1.5rem; margin-bottom: 1rem; }
+
+    .feature-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+    }
+
+    .feature-desc {
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.6;
+      font-weight: 300;
+    }
+
+    /* ── COUNTRIES ── */
+    .countries-section {
+      background: var(--cream);
+      border-top: 1.5px solid var(--ruled);
+      border-bottom: 1.5px solid var(--ruled);
+      padding: 3rem;
+      text-align: center;
+    }
+
+    .countries-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .flag-row {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.8rem;
+      font-size: 1.8rem;
+      margin-bottom: 1rem;
+    }
+
+    .countries-more {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    /* ── TESTIMONIAL ── */
+    .testimonial-section {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 5rem 3rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+
+    .testimonial-quote {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.6rem;
+      font-style: italic;
+      line-height: 1.4;
+      color: var(--ink);
+      position: relative;
+      padding-left: 1.5rem;
+      border-left: 3px solid var(--accent);
+    }
+
+    .testimonial-author {
+      margin-top: 1.5rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      padding-left: 1.5rem;
+    }
+
+    .testimonial-author strong { color: var(--ink); display: block; margin-bottom: 0.2rem; }
+
+    .pricing-card {
+      background: var(--ink);
+      color: var(--paper);
+      border-radius: 4px;
+      padding: 2.5rem;
+    }
+
+    .pricing-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 1rem;
+    }
+
+    .pricing-price {
+      font-family: 'Playfair Display', serif;
+      font-size: 3.5rem;
+      font-weight: 900;
+      line-height: 1;
+      margin-bottom: 0.3rem;
+    }
+
+    .pricing-price span { font-size: 1.2rem; vertical-align: super; }
+    .pricing-period { font-size: 0.78rem; color: rgba(255,255,255,0.4); margin-bottom: 2rem; }
+
+    .pricing-features { list-style: none; margin-bottom: 2rem; }
+    .pricing-features li {
+      padding: 0.6rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.82rem;
+      color: rgba(255,255,255,0.7);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .pricing-features li::before { content: '✓'; color: var(--gold); font-weight: 700; }
+
+    .pricing-free {
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.3);
+      text-align: center;
+      margin-top: 1rem;
+    }
+
+    /* ── CTA ── */
+    .cta-section {
+      background: var(--accent);
+      padding: 5rem 3rem;
+      text-align: center;
+    }
+
+    .cta-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      font-weight: 900;
+      color: #fff;
+      line-height: 1.1;
+      margin-bottom: 1rem;
+    }
+
+    .cta-sub {
+      font-size: 1rem;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 2.5rem;
+      font-weight: 300;
+    }
+
+    .btn-white {
+      background: #fff;
+      color: var(--accent);
+      padding: 1rem 2.5rem;
+      border-radius: 2px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-block;
+      transition: all 0.2s;
+    }
+
+    .btn-white:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--ink);
+      color: rgba(255,255,255,0.4);
+      padding: 2rem 3rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+    }
+
+    .footer-logo { font-family:'Playfair Display',serif; color:#fff; font-size:1.1rem; }
+    .footer-logo span { color:var(--gold); font-style:italic; }
+
+    /* ── RESPONSIVE ── */
+    @media(max-width:768px) {
+      nav { padding:1rem 1.5rem; }
+      .nav-links { display:none; }
+      .hero { grid-template-columns:1fr; padding:3rem 1.5rem; gap:2.5rem; }
+      .hero-visual { order:-1; }
+      .mock-app { transform:none; }
+      .stats-bar { grid-template-columns:1fr 1fr; padding:2rem 1.5rem; }
+      .stat { padding:1rem; border-right:none; border-bottom:1px solid var(--ruled); }
+      .stat:nth-child(odd) { border-right:1px solid var(--ruled); }
+      .how-section { padding:3rem 1.5rem; }
+      .steps { grid-template-columns:1fr; }
+      .step { border-right:none; border-bottom:1px solid rgba(255,255,255,0.08); }
+      .features-section { padding:3rem 1.5rem; }
+      .features-grid { grid-template-columns:1fr; }
+      .testimonial-section { grid-template-columns:1fr; padding:3rem 1.5rem; gap:2rem; }
+      .cta-section { padding:3rem 1.5rem; }
+      footer { flex-direction:column; gap:1rem; text-align:center; padding:1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-logo">COM<span>PLY</span></div>
+    <div class="nav-links">
+      <a href="#how" class="nav-link">How it works</a>
+      <a href="#features" class="nav-link">Features</a>
+      <a href="#pricing" class="nav-link">Pricing</a>
+      <a href="/login" class="nav-link">Log in</a>
+      <a href="/register" class="nav-cta">Start free →</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-left">
+      <div class="hero-eyebrow">
+        <div class="eyebrow-dot"></div>
+        Business Compliance Made Simple
+      </div>
+      <h1 class="hero-title">
+        Never miss a<br />
+        <em>tax deadline</em><br />
+        again.
+      </h1>
+      <p class="hero-sub">
+        COMPLY automatically loads every tax, license, and compliance deadline for your business — based on your country, industry, and size. In under 2 minutes.
+      </p>
+      <div class="hero-actions">
+        <a href="/register" class="btn-primary">Start free — no card needed</a>
+        <a href="#how" class="btn-ghost">See how it works ↓</a>
+      </div>
+    </div>
+
+    <div class="hero-visual">
+      <div class="mock-app">
+        <div class="mock-header">
+          <div class="mock-logo">COM<span>PLY</span></div>
+          <div class="mock-badge">Score: 62%</div>
+        </div>
+        <div class="mock-alert">
+          <div class="mock-dot"></div>
+          2 urgent deadlines this week
+        </div>
+        <div class="mock-body">
+          <div class="mock-progress">
+            <div class="mock-prog-label"><span>Compliance Progress</span><span>62%</span></div>
+            <div class="mock-prog-bar"><div class="mock-prog-fill"></div></div>
+          </div>
+
+          <div class="mock-block">
+            <div class="mock-block-head"><span>🔴 Urgent</span><span style="background:#d94f3d;color:#fff;padding:0.1rem 0.4rem;border-radius:10px;font-size:0.5rem;">2</span></div>
+            <div class="mock-block-body">
+              <div class="mock-row urgent">
+                <div class="mock-date"><span class="mock-month">Apr</span><div class="mock-day">15</div></div>
+                <div class="mock-info"><div class="mock-title">IVA Trimestral Q1</div><span class="mock-tag tax">tax</span></div>
+                <div class="mock-check"></div>
+              </div>
+              <div class="mock-row urgent">
+                <div class="mock-date"><span class="mock-month">Apr</span><div class="mock-day">18</div></div>
+                <div class="mock-info"><div class="mock-title">Licença de Actividade</div><span class="mock-tag license">license</span></div>
+                <div class="mock-check"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mock-block">
+            <div class="mock-block-head"><span>✅ Done</span><span style="background:#2a7d4f;color:#fff;padding:0.1rem 0.4rem;border-radius:10px;font-size:0.5rem;">3</span></div>
+            <div class="mock-block-body">
+              <div class="mock-row done">
+                <div class="mock-date"><span class="mock-month">Mar</span><div class="mock-day">31</div></div>
+                <div class="mock-info"><div class="mock-title">IES — Informação Empresarial</div><span class="mock-tag payroll">filing</span></div>
+                <div class="mock-check done">✓</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="section-divider" />
+
+  <!-- STATS -->
+  <div class="stats-bar">
+    <div class="stat">
+      <div class="stat-num">195<span>+</span></div>
+      <div class="stat-label">Countries supported with real local deadlines</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">2<span>min</span></div>
+      <div class="stat-label">To set up your full compliance calendar</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">€0</div>
+      <div class="stat-label">To get started — free forever for solo businesses</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">6<span>+</span></div>
+      <div class="stat-label">Industries supported with specific permits</div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- HOW IT WORKS -->
+  <section class="how-section" id="how">
+    <div class="how-inner">
+      <div class="section-eyebrow">How it works</div>
+      <h2 class="section-title">From signup to<br /><em>full compliance</em><br />in 2 minutes.</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">01</div>
+          <span class="step-icon">🌍</span>
+          <div class="step-title">Tell us about your business</div>
+          <p class="step-desc">Pick your country, region, industry, and number of employees. Takes under 2 minutes. No paperwork, no accountant needed.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <span class="step-icon">⚡</span>
+          <div class="step-title">Your deadlines load automatically</div>
+          <p class="step-desc">COMPLY instantly populates every tax filing, license renewal, and compliance deadline specific to your business. All in one place.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <span class="step-icon">✅</span>
+          <div class="step-title">Check them off as you go</div>
+          <p class="step-desc">Mark deadlines done, track your compliance score, and add custom deadlines. Never pay a late fee again.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features-section" id="features">
+    <div class="section-eyebrow" style="color:var(--muted);margin-bottom:0.5rem;">
+      <span style="display:inline-block;width:30px;height:1.5px;background:var(--muted);margin-right:0.6rem;vertical-align:middle;"></span>
+      Features
+    </div>
+    <h2 style="font-family:'Playfair Display',serif;font-size:clamp(1.8rem,3vw,2.5rem);font-weight:900;line-height:1.1;">Everything your business<br /><em style="font-style:italic;color:var(--accent);">actually needs.</em></h2>
+
+    <div class="features-grid">
+      <div class="feature">
+        <div class="feature-icon">🗺️</div>
+        <div class="feature-title">195 Countries</div>
+        <p class="feature-desc">Real deadlines for Portugal, USA, UK, Brazil, Germany, France, Australia, Japan, Singapore, and 186 more. In your language.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🏭</div>
+        <div class="feature-title">Industry-Specific</div>
+        <p class="feature-desc">Food & drink, retail, services, construction, freelance — each gets the specific permits and licenses their industry requires.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📊</div>
+        <div class="feature-title">Compliance Score</div>
+        <p class="feature-desc">See your compliance health at a glance. Track what's done, what's urgent, and what's coming up — all in one dashboard.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">➕</div>
+        <div class="feature-title">Custom Deadlines</div>
+        <p class="feature-desc">Add any deadline specific to your business — local permits, insurance renewals, lease agreements, anything.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🤖</div>
+        <div class="feature-title">AI Assistant</div>
+        <p class="feature-desc">Ask anything about your deadlines in plain language. Get real answers about what to do, where to file, and what the penalty is.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🔒</div>
+        <div class="feature-title">Private & Secure</div>
+        <p class="feature-desc">Your data is private and encrypted. Only you can see your deadlines. No ads, no data selling, ever.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- COUNTRIES -->
+  <div class="countries-section">
+    <div class="countries-label">Trusted by businesses in</div>
+    <div class="flag-row">
+      🇵🇹 🇺🇸 🇬🇧 🇧🇷 🇩🇪 🇫🇷 🇪🇸 🇮🇹 🇳🇱 🇦🇺 🇯🇵 🇸🇬 🇮🇳 🇨🇦 🇲🇽
+    </div>
+    <div class="countries-more">+ 180 more countries supported</div>
+  </div>
+
+  <!-- PRICING + TESTIMONIAL -->
+  <section class="testimonial-section" id="pricing">
+    <div>
+      <div class="testimonial-quote">
+        "I used to spend hours every quarter figuring out what I needed to file. COMPLY just shows it all to me. I haven't paid a late fee since."
+      </div>
+      <div class="testimonial-author">
+        <strong>Maria S.</strong>
+        Restaurant owner, Lisbon
+      </div>
+
+      <div style="margin-top:3rem;">
+        <div class="testimonial-quote" style="font-size:1.2rem;">
+          "As a freelancer in Germany, the tax system is incredibly confusing. COMPLY laid out every deadline I have in plain German. Game changer."
+        </div>
+        <div class="testimonial-author">
+          <strong>Klaus M.</strong>
+          Freelance designer, Munich
+        </div>
+      </div>
+    </div>
+
+    <div class="pricing-card">
+      <div class="pricing-label">Simple pricing</div>
+      <div class="pricing-price"><span>€</span>9</div>
+      <div class="pricing-period">per month · cancel anytime</div>
+      <ul class="pricing-features">
+        <li>All deadlines for your country</li>
+        <li>Industry-specific permits</li>
+        <li>Unlimited custom deadlines</li>
+        <li>AI compliance assistant</li>
+        <li>Email reminders</li>
+        <li>195 countries supported</li>
+      </ul>
+      <a href="/register" class="btn-primary" style="display:block;text-align:center;border-radius:2px;">Start free →</a>
+      <div class="pricing-free">Free for solo businesses · No credit card required</div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <h2 class="cta-title">Stop losing money<br />to late fees.</h2>
+    <p class="cta-sub">Join thousands of business owners who never miss a deadline.</p>
+    <a href="/register" class="btn-white">Set up your compliance calendar — free</a>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-logo">COM<span>PLY</span></div>
+    <div>© 2025 COMPLY · Business compliance made simple</div>
+    <div><a href="/login" style="color:rgba(255,255,255,0.4);text-decoration:none;">Log in</a> · <a href="/register" style="color:rgba(255,255,255,0.4);text-decoration:none;">Sign up</a></div>
+  </footer>
+
+</body>
+</html>

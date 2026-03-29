@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>COMPLY</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&family=Architects+Daughter&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg:#f2ece0; --surface:#faf6ef; --ruled:#e0d8c8; --ink:#1a1714; --red:#d94f3d; --blue:#2b5fc9; --green:#2a7d4f; --yellow:#c49a0a; --purple:#7c3aed; --muted:#8c7e6a; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:"DM Mono",monospace; background:var(--bg); color:var(--ink); max-width:480px; margin:0 auto; min-height:100vh; }
+    .app { display:flex; flex-direction:column; min-height:100vh; padding-bottom:68px; }
+
+    /* HEADER */
+    .header { background:var(--ink); padding:0 1.2rem; height:64px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:50; }
+    .logo { font-family:"Instrument Serif",serif; font-size:1.8rem; color:#fff; }
+    .logo span { color:#c49a0a; font-style:italic; }
+    .logo-sub { font-size:0.52rem; color:#555; letter-spacing:0.15em; text-transform:uppercase; margin-top:-3px; }
+
+    /* USER MENU */
+    .user-menu-wrap { position:relative; }
+    .user-btn {
+      display:flex; align-items:center; gap:0.5rem;
+      background:rgba(255,255,255,0.07);
+      border:1px solid rgba(255,255,255,0.12);
+      border-radius:20px;
+      padding:0.35rem 0.7rem 0.35rem 0.4rem;
+      cursor:pointer;
+      transition:background 0.15s;
+    }
+    .user-btn:hover { background:rgba(255,255,255,0.12); }
+    .user-avatar {
+      width:26px; height:26px;
+      background:linear-gradient(135deg,#c49a0a,#8a6a00);
+      border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      font-size:0.7rem; font-weight:700; color:var(--ink);
+      flex-shrink:0;
+    }
+    .user-name { font-size:0.68rem; color:#ccc; max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    .user-dropdown {
+      position:absolute; top:calc(100% + 8px); right:0;
+      background:var(--surface);
+      border:1.5px solid var(--ruled);
+      border-radius:12px;
+      width:220px;
+      box-shadow:0 8px 24px rgba(0,0,0,0.15);
+      overflow:hidden;
+      display:none;
+      z-index:100;
+    }
+    .user-dropdown.open { display:block; animation:fadeUp 0.2s ease both; }
+
+    .dropdown-header {
+      padding:1rem 1rem 0.8rem;
+      border-bottom:1px solid var(--ruled);
+    }
+    .dropdown-biz { font-size:0.82rem; font-weight:500; color:var(--ink); margin-bottom:0.15rem; }
+    .dropdown-email { font-size:0.68rem; color:var(--muted); }
+
+    .dropdown-item {
+      display:flex; align-items:center; gap:0.6rem;
+      padding:0.75rem 1rem;
+      font-size:0.78rem;
+      color:var(--ink);
+      cursor:pointer;
+      transition:background 0.15s;
+      border:none; background:none; width:100%; text-align:left;
+      font-family:"DM Mono",monospace;
+    }
+    .dropdown-item:hover { background:var(--bg); }
+    .dropdown-item.danger { color:var(--red); }
+    .dropdown-item .di-icon { font-size:1rem; width:18px; text-align:center; }
+    .dropdown-divider { border:none; border-top:1px solid var(--ruled); margin:0; }
+
+    /* ALERT */
+    .alert-strip { background:#fff8e6; border-bottom:1.5px dashed #ddb830; padding:0.65rem 1.2rem; display:flex; align-items:center; gap:0.6rem; font-size:0.72rem; color:#7a5500; }
+    .alert-dot { width:7px; height:7px; background:var(--red); border-radius:50%; flex-shrink:0; animation:blink 1.2s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+
+    /* TABS */
+    .tabs { display:flex; background:var(--bg); border-bottom:2px solid var(--ruled); height:48px; position:sticky; top:64px; z-index:40; }
+    .tab { flex:1; border:none; background:none; font-family:"Architects Daughter",cursive; font-size:0.78rem; color:var(--muted); cursor:pointer; border-bottom:2.5px solid transparent; transition:all 0.15s; }
+    .tab.active { color:var(--ink); border-bottom-color:var(--ink); font-weight:700; }
+
+    /* MAIN */
+    .main { flex:1; padding:1.2rem; }
+    .section { display:none; }
+    .section.active { display:block; animation:fadeUp 0.3s ease both; }
+    @keyframes fadeUp { from{transform:translateY(10px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+    /* PROGRESS */
+    .progress-wrap { margin-bottom:1.2rem; }
+    .progress-labels { display:flex; justify-content:space-between; font-size:0.68rem; color:var(--muted); margin-bottom:0.4rem; }
+    .progress-bar { height:7px; background:var(--ruled); border-radius:10px; overflow:hidden; }
+    .progress-fill { height:100%; background:linear-gradient(90deg,var(--green),#4ade80); border-radius:10px; transition:width 0.8s cubic-bezier(0.16,1,0.3,1); }
+
+    /* BLOCKS */
+    .block { margin-bottom:1.2rem; }
+    .block-header { display:flex; justify-content:space-between; align-items:center; background:#ede8da; border:1.5px solid var(--ruled); border-bottom:none; border-radius:8px 8px 0 0; padding:0.5rem 0.9rem; font-family:"Architects Daughter",cursive; font-size:0.78rem; color:var(--muted); }
+    .block-count { background:var(--ink); color:var(--surface); font-family:"DM Mono",monospace; font-size:0.6rem; padding:0.1rem 0.45rem; border-radius:20px; }
+    .deadline-list { border:1.5px solid var(--ruled); border-radius:0 0 8px 8px; overflow:hidden; background:var(--surface); }
+
+    /* DEADLINE ROW */
+    .deadline-row { display:grid; grid-template-columns:52px 1fr auto; gap:0.7rem; align-items:center; padding:0.85rem 0.9rem; border-bottom:1px solid var(--ruled); position:relative; transition:background 0.15s; }
+    .deadline-row:last-child { border-bottom:none; }
+    .deadline-row:hover { background:#f0ebe0; }
+    .deadline-row::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3.5px; }
+    .deadline-row.urgent::before   { background:var(--red); }
+    .deadline-row.upcoming::before { background:var(--yellow); }
+    .deadline-row.done::before     { background:var(--ruled); }
+    .due-box { text-align:center; }
+    .due-month { display:block; font-size:0.55rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); font-family:"Architects Daughter",cursive; }
+    .due-day { font-family:"Instrument Serif",serif; font-size:1.6rem; line-height:1; color:var(--ink); }
+    .deadline-row.urgent .due-day { color:var(--red); }
+    .deadline-row.done   .due-day { color:var(--ruled); }
+    .dl-info { display:flex; flex-direction:column; gap:0.2rem; overflow:hidden; }
+    .dl-title { font-size:0.8rem; font-weight:500; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .deadline-row.done .dl-title { text-decoration:line-through; color:var(--muted); }
+    .dl-tag { font-size:0.58rem; text-transform:uppercase; letter-spacing:0.08em; padding:0.12rem 0.45rem; border-radius:20px; border:1.5px solid currentColor; display:inline-block; width:fit-content; }
+    .dl-tag.tax { color:var(--red); } .dl-tag.license { color:var(--blue); } .dl-tag.payroll { color:var(--purple); } .dl-tag.insurance { color:var(--green); } .dl-tag.filing { color:var(--yellow); }
+    .check-btn { width:30px; height:30px; border-radius:50%; border:2px solid var(--ruled); background:none; cursor:pointer; font-size:0.85rem; display:flex; align-items:center; justify-content:center; transition:all 0.2s; color:transparent; flex-shrink:0; }
+    .check-btn:hover { border-color:var(--green); color:var(--green); }
+    .deadline-row.done .check-btn { background:var(--green); border-color:var(--green); color:#fff; }
+    .empty { padding:1.2rem; font-size:0.75rem; color:var(--muted); text-align:center; font-family:"Architects Daughter",cursive; }
+
+    /* FORM */
+    .form-card { background:var(--surface); border:1.5px solid var(--ruled); border-radius:12px; padding:1.5rem; }
+    .form-title { font-family:"Instrument Serif",serif; font-size:1.3rem; margin-bottom:1.2rem; }
+    .form-group { margin-bottom:1rem; }
+    .form-group label { display:block; font-size:0.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0.35rem; }
+    .form-group input, .form-group select { width:100%; background:var(--bg); border:1.5px solid var(--ruled); border-radius:8px; padding:0.65rem 0.9rem; font-family:"DM Mono",monospace; font-size:0.82rem; color:var(--ink); outline:none; transition:border-color 0.2s; }
+    .form-group input:focus, .form-group select:focus { border-color:var(--ink); }
+    .btn-primary { width:100%; background:var(--ink); color:var(--surface); border:none; border-radius:8px; padding:0.85rem; font-family:"Architects Daughter",cursive; font-size:0.95rem; cursor:pointer; margin-top:0.5rem; transition:all 0.2s; }
+    .btn-primary:hover { background:#2d2925; }
+    .form-feedback { margin-top:0.8rem; font-size:0.75rem; text-align:center; min-height:20px; }
+
+    /* AI */
+    .ai-card { background:var(--ink); border-radius:12px; padding:1.2rem; display:flex; flex-direction:column; gap:1rem; min-height:65vh; }
+    .ai-header { display:flex; align-items:center; gap:0.8rem; padding-bottom:0.8rem; border-bottom:1px solid rgba(255,255,255,0.08); }
+    .ai-icon { width:36px; height:36px; background:linear-gradient(135deg,#c49a0a,#8a6a00); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:1rem; }
+    .ai-name { font-family:"Instrument Serif",serif; font-size:1rem; color:#fff; }
+    .ai-sub { font-size:0.62rem; color:#555; }
+    .ai-messages { flex:1; display:flex; flex-direction:column; gap:0.7rem; overflow-y:auto; max-height:38vh; }
+    .ai-msg { padding:0.7rem 0.9rem; border-radius:10px; font-size:0.78rem; line-height:1.6; max-width:90%; }
+    .ai-msg.bot  { background:rgba(255,255,255,0.07); color:#ccc; align-self:flex-start; }
+    .ai-msg.user { background:#c49a0a; color:var(--ink); align-self:flex-end; }
+    .ai-input-row { display:flex; gap:0.6rem; }
+    .ai-input-row input { flex:1; background:rgba(255,255,255,0.07); border:1.5px solid rgba(255,255,255,0.1); border-radius:8px; padding:0.65rem 0.9rem; font-family:"DM Mono",monospace; font-size:0.78rem; color:#ddd; outline:none; }
+    .ai-input-row input::placeholder { color:#444; }
+    .ai-input-row input:focus { border-color:rgba(196,154,10,0.4); }
+    .ai-input-row button { background:#c49a0a; color:var(--ink); border:none; border-radius:8px; padding:0.65rem 1rem; font-size:1rem; cursor:pointer; font-weight:700; }
+    .ai-input-row button:hover { background:#e0b820; }
+    .ai-suggestions { display:flex; flex-wrap:wrap; gap:0.4rem; }
+    .suggest { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#888; font-size:0.65rem; padding:0.3rem 0.6rem; border-radius:20px; cursor:pointer; transition:all 0.15s; }
+    .suggest:hover { border-color:#c49a0a; color:#c49a0a; }
+
+    /* BOTTOM NAV */
+    .bottom-nav { position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px; height:64px; background:var(--ink); border-top:1px solid #2a2520; display:flex; z-index:50; }
+    .bnav-item { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0.2rem; cursor:pointer; font-size:0.58rem; color:#555; letter-spacing:0.05em; text-transform:uppercase; transition:color 0.15s; }
+    .bnav-item span:first-child { font-size:1.2rem; }
+    .bnav-item.active { color:#c49a0a; }
+    .bnav-item:hover  { color:#888; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div>
+      <div class="logo">COM<span>PLY</span></div>
+      <div class="logo-sub">Business Deadline Planner</div>
+    </div>
+
+    <!-- USER MENU -->
+    <div class="user-menu-wrap">
+      <div class="user-btn" id="user-btn" onclick="toggleMenu()">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <div class="user-name" id="user-name">Account</div>
+      </div>
+      <div class="user-dropdown" id="user-dropdown">
+        <div class="dropdown-header">
+          <div class="dropdown-biz" id="dropdown-biz">Loading...</div>
+          <div class="dropdown-email" id="dropdown-email"></div>
+        </div>
+        <button class="dropdown-item" onclick="window.location.href='/onboard'">
+          <span class="di-icon">⚙️</span> Change my profile
+        </button>
+        <hr class="dropdown-divider" />
+        <button class="dropdown-item danger" onclick="logout()">
+          <span class="di-icon">🚪</span> Log out
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ALERT -->
+  <div class="alert-strip" id="alert-strip" style="display:none;">
+    <span class="alert-dot"></span>
+    <span id="alert-text"></span>
+  </div>
+
+  <!-- TABS -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="deadlines">📋 Deadlines</button>
+    <button class="tab" data-tab="add">➕ Add</button>
+    <button class="tab" data-tab="ai">🤖 Ask AI</button>
+  </nav>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- DEADLINES -->
+    <section class="section active" id="tab-deadlines">
+      <div class="progress-wrap">
+        <div class="progress-labels"><span>Compliance Progress</span><span id="prog-pct">0%</span></div>
+        <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+      </div>
+      <div class="block">
+        <div class="block-header"><span>🔴 Urgent</span><span class="block-count" id="c-urgent">0</span></div>
+        <div class="deadline-list" id="list-urgent"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="block">
+        <div class="block-header"><span>🟡 Upcoming</span><span class="block-count" id="c-upcoming">0</span></div>
+        <div class="deadline-list" id="list-upcoming"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="block">
+        <div class="block-header"><span>✅ Done</span><span class="block-count" id="c-done">0</span></div>
+        <div class="deadline-list" id="list-done"><div class="empty">Loading...</div></div>
+      </div>
+    </section>
+
+    <!-- ADD -->
+    <section class="section" id="tab-add">
+      <div class="form-card">
+        <div class="form-title">Add a New Deadline</div>
+        <div class="form-group"><label>Title *</label><input type="text" id="f-title" placeholder="e.g. IVA Trimestral" /></div>
+        <div class="form-group"><label>Due Date *</label><input type="date" id="f-date" /></div>
+        <div class="form-group">
+          <label>Category</label>
+          <select id="f-category">
+            <option value="tax">Tax / Imposto</option>
+            <option value="license">License / Licença</option>
+            <option value="payroll">Payroll / Salários</option>
+            <option value="insurance">Insurance / Seguro</option>
+            <option value="filing">Filing / Declaração</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Description</label><input type="text" id="f-desc" placeholder="e.g. Portal das Finanças AT" /></div>
+        <div class="form-group"><label>Penalty if missed</label><input type="text" id="f-penalty" placeholder="e.g. Coima de €200" /></div>
+        <button class="btn-primary" id="add-btn">Add Deadline →</button>
+        <div class="form-feedback" id="form-feedback"></div>
+      </div>
+    </section>
+
+    <!-- AI -->
+    <section class="section" id="tab-ai">
+      <div class="ai-card">
+        <div class="ai-header">
+          <div class="ai-icon">🤖</div>
+          <div><div class="ai-name">COMPLY Assistant</div><div class="ai-sub">Ask anything about business compliance</div></div>
+        </div>
+        <div class="ai-messages" id="ai-messages">
+          <div class="ai-msg bot">Hi! Ask me anything about taxes, licenses, payroll, or deadlines. Plain English, no jargon.</div>
+        </div>
+        <div class="ai-input-row">
+          <input type="text" id="ai-input" placeholder="e.g. When is IVA due in Portugal?" />
+          <button id="ai-send">→</button>
+        </div>
+        <div class="ai-suggestions">
+          <div class="suggest" data-q="When is IVA due in Portugal?">IVA due dates Portugal?</div>
+          <div class="suggest" data-q="What is the penalty for missing IRS in Portugal?">IRS penalty Portugal?</div>
+          <div class="suggest" data-q="How often do I file payroll taxes?">Payroll taxes?</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- BOTTOM NAV -->
+  <footer class="bottom-nav">
+    <div class="bnav-item active" data-tab="deadlines"><span>📋</span><span>Deadlines</span></div>
+    <div class="bnav-item" data-tab="add"><span>➕</span><span>Add</span></div>
+    <div class="bnav-item" data-tab="ai"><span>🤖</span><span>AI</span></div>
+  </footer>
+
+</div>
+<script>
+// ── USER MENU ────────────────────────────────────────────────────────────────
+function toggleMenu() {
+  document.getElementById("user-dropdown").classList.toggle("open");
+}
+
+// Close menu when clicking outside
+document.addEventListener("click", function(e) {
+  var wrap = document.getElementById("user-menu-wrap");
+  if (!document.querySelector(".user-menu-wrap").contains(e.target)) {
+    document.getElementById("user-dropdown").classList.remove("open");
+  }
+});
+
+async function logout() {
+  await fetch("/api/logout", { method:"POST" });
+  window.location.href = "/login";
+}
+
+async function loadUser() {
+  try {
+    var res  = await fetch("/api/me");
+    var user = await res.json();
+    if (res.ok) {
+      var initials = (user.business_name || user.email || "?")[0].toUpperCase();
+      document.getElementById("user-avatar").textContent  = initials;
+      document.getElementById("user-name").textContent    = user.business_name || user.email;
+      document.getElementById("dropdown-biz").textContent = user.business_name || "My Business";
+      document.getElementById("dropdown-email").textContent = user.email;
+    }
+  } catch(e) { console.error("Could not load user:", e); }
+}
+
+// ── DEADLINES ────────────────────────────────────────────────────────────────
+async function loadDeadlines() {
+  try {
+    var res       = await fetch("/deadlines");
+    var deadlines = await res.json();
+    renderAll(deadlines);
+  } catch(e) { console.error("Could not load deadlines:", e); }
+}
+
+function renderAll(deadlines) {
+  var urgent   = deadlines.filter(function(d){ return d.status==="urgent"; });
+  var upcoming = deadlines.filter(function(d){ return d.status==="upcoming"; });
+  var done     = deadlines.filter(function(d){ return d.status==="done"; });
+
+  renderList("list-urgent",   urgent,   "No urgent deadlines 🎉");
+  renderList("list-upcoming", upcoming, "No upcoming deadlines.");
+  renderList("list-done",     done,     "Nothing completed yet.");
+
+  document.getElementById("c-urgent").textContent   = urgent.length;
+  document.getElementById("c-upcoming").textContent = upcoming.length;
+  document.getElementById("c-done").textContent     = done.length;
+
+  var pct = deadlines.length > 0 ? Math.round((done.length/deadlines.length)*100) : 0;
+  document.getElementById("prog-fill").style.width = pct+"%";
+  document.getElementById("prog-pct").textContent  = pct+"%";
+
+  var al = document.getElementById("alert-strip");
+  if (urgent.length > 0) {
+    al.style.display = "flex";
+    document.getElementById("alert-text").textContent = "You have "+urgent.length+" urgent deadline"+(urgent.length>1?"s":"")+" this week.";
+  } else {
+    al.style.display = "none";
+  }
+}
+
+function renderList(id, items, empty) {
+  var el = document.getElementById(id);
+  if (items.length===0) { el.innerHTML='<div class="empty">'+empty+'</div>'; return; }
+  el.innerHTML = items.map(function(d) {
+    return '<div class="deadline-row '+d.status+'">' +
+      '<div class="due-box"><span class="due-month">'+(d.month||"")+'</span><div class="due-day">'+(d.day||"")+'</div></div>' +
+      '<div class="dl-info"><div class="dl-title">'+d.title+'</div><span class="dl-tag '+d.category+'">'+d.category+'</span></div>' +
+      '<button class="check-btn" onclick="toggleDone('+d.id+')">&#10003;</button>' +
+      '</div>';
+  }).join("");
+}
+
+async function toggleDone(id) {
+  await fetch("/deadlines/"+id+"/toggle", { method:"PATCH" });
+  loadDeadlines();
+}
+
+// ── ADD DEADLINE ──────────────────────────────────────────────────────────────
+document.getElementById("add-btn").addEventListener("click", async function() {
+  var title    = document.getElementById("f-title").value.trim();
+  var dateVal  = document.getElementById("f-date").value;
+  var category = document.getElementById("f-category").value;
+  var desc     = document.getElementById("f-desc").value.trim();
+  var penalty  = document.getElementById("f-penalty").value.trim();
+  var feedback = document.getElementById("form-feedback");
+
+  if (!title || !dateVal) {
+    feedback.style.color = "#d94f3d";
+    feedback.textContent = "Please fill in a title and due date.";
+    return;
+  }
+
+  var date   = new Date(dateVal);
+  var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var month  = months[date.getMonth()];
+  var day    = String(date.getDate()+1);
+
+  var res = await fetch("/deadlines", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ title, due_date:dateVal, month, day, category, description:desc, penalty })
+  });
+
+  if (res.ok) {
+    feedback.style.color = "#2a7d4f";
+    feedback.textContent = "✓ Deadline saved!";
+    document.getElementById("f-title").value   = "";
+    document.getElementById("f-date").value    = "";
+    document.getElementById("f-desc").value    = "";
+    document.getElementById("f-penalty").value = "";
+    setTimeout(function(){ switchTab("deadlines"); loadDeadlines(); feedback.textContent=""; }, 1000);
+  } else {
+    feedback.style.color = "#d94f3d";
+    feedback.textContent = "Something went wrong.";
+  }
+});
+
+// ── TABS ─────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("active", t.dataset.tab===name); });
+  document.querySelectorAll(".bnav-item").forEach(function(b){ b.classList.toggle("active", b.dataset.tab===name); });
+  document.querySelectorAll(".section").forEach(function(s){ s.classList.toggle("active", s.id==="tab-"+name); });
+}
+document.querySelectorAll(".tab, .bnav-item").forEach(function(el){
+  el.addEventListener("click", function(){ switchTab(el.dataset.tab); });
+});
+
+// ── AI ────────────────────────────────────────────────────────────────────────
+var answers = {
+  "iva":        "Em Portugal, o IVA trimestral é entregue até ao dia 15 do 2.º mês seguinte ao trimestre. Trimestres: Jan-Mar (prazo: 15 Mai), Abr-Jun (15 Ago), Jul-Set (15 Nov), Out-Dez (15 Fev). Entrega no Portal das Finanças AT.",
+  "irs":        "A declaração de IRS deve ser entregue entre 1 de Abril e 30 de Junho no Portal das Finanças. Coima por atraso: €200 a €2.500. Se tiver dúvidas, contacte um contabilista certificado.",
+  "sales tax":  "In the US, sales tax is filed quarterly in most states. California: due 15th of month after quarter end. Texas: due 20th. Florida: due 19th. Check your state revenue website for exact dates.",
+  "payroll":    "Payroll taxes (Form 941) are filed quarterly in the US: Apr 30, Jul 31, Oct 31, Jan 31. In Portugal, the Segurança Social declaração is due monthly by the 10th.",
+  "penalty":    "Missing tax deadlines typically results in: Portugal — coima €200-€2.500 + juros. US — 5% per month up to 25%. UK — £100 immediate + daily penalties. Always file even if you can't pay — the penalty for not filing is worse.",
+  "vat":        "UK VAT returns are due 1 month and 7 days after the end of your VAT period. So if your quarter ends March 31, your return is due May 7. File via HMRC Making Tax Digital.",
+};
+
+function sendAI() {
+  var input = document.getElementById("ai-input");
+  var q = input.value.trim();
+  if (!q) return;
+  addMsg(q, "user");
+  input.value = "";
+  var typingId = addMsg("...", "bot");
+  setTimeout(function() {
+    var lower = q.toLowerCase();
+    var reply = "Good question! The most important rule: always file on time even if you can't pay — the penalty for not filing is always worse than the penalty for not paying. Check your country's tax authority website for specific deadlines.";
+    for (var k in answers) { if (lower.indexOf(k)!==-1) { reply=answers[k]; break; } }
+    document.getElementById(typingId).textContent = reply;
+  }, 700);
+}
+
+function addMsg(text, who) {
+  var msgs = document.getElementById("ai-messages");
+  var id   = "m"+Date.now();
+  var div  = document.createElement("div");
+  div.className   = "ai-msg "+who;
+  div.id          = id;
+  div.textContent = text;
+  msgs.appendChild(div);
+  msgs.scrollTop  = msgs.scrollHeight;
+  return id;
+}
+
+document.getElementById("ai-send").addEventListener("click", sendAI);
+document.getElementById("ai-input").addEventListener("keydown", function(e){ if(e.key==="Enter") sendAI(); });
+document.querySelectorAll(".suggest").forEach(function(s){
+  s.addEventListener("click", function(){ document.getElementById("ai-input").value=s.dataset.q; sendAI(); });
+});
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+loadUser();
+loadDeadlines();
+</script>
+</body>
+</html>

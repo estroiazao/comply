@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>COMPLY — Setup</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&family=Architects+Daughter&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg:#f2ece0; --surface:#faf6ef; --ruled:#e0d8c8; --ink:#1a1714; --green:#2a7d4f; --red:#d94f3d; --muted:#8c7e6a; --gold:#c49a0a; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:"DM Mono",monospace; background:var(--bg); color:var(--ink); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:1.5rem; }
+    .card { background:var(--surface); border:1.5px solid var(--ruled); border-radius:16px; padding:2.5rem 2rem; width:100%; max-width:460px; }
+    .logo { font-family:"Instrument Serif",serif; font-size:2rem; color:var(--ink); text-align:center; margin-bottom:0.3rem; }
+    .logo span { color:var(--gold); font-style:italic; }
+    .step-indicator { display:flex; justify-content:center; gap:0.5rem; margin:1.2rem 0 2rem; }
+    .step-dot { width:8px; height:8px; border-radius:50%; background:var(--ruled); transition:all 0.3s; }
+    .step-dot.active { background:var(--ink); transform:scale(1.3); }
+    .step-dot.done { background:var(--green); }
+    .step { display:none; }
+    .step.active { display:block; animation:fadeUp 0.3s ease both; }
+    @keyframes fadeUp { from{transform:translateY(8px);opacity:0} to{transform:translateY(0);opacity:1} }
+    .step-title { font-family:"Instrument Serif",serif; font-size:1.4rem; margin-bottom:0.4rem; }
+    .step-sub { font-size:0.75rem; color:var(--muted); margin-bottom:1.2rem; line-height:1.6; }
+
+    /* COUNTRY SEARCH */
+    .search-box { width:100%; background:var(--bg); border:1.5px solid var(--ruled); border-radius:8px; padding:0.75rem 0.9rem; font-family:"DM Mono",monospace; font-size:0.85rem; color:var(--ink); outline:none; margin-bottom:0.8rem; transition:border-color 0.2s; }
+    .search-box:focus { border-color:var(--ink); }
+    .country-list { max-height:260px; overflow-y:auto; border:1.5px solid var(--ruled); border-radius:8px; background:var(--bg); margin-bottom:1.2rem; }
+    .country-item { display:flex; align-items:center; gap:0.7rem; padding:0.65rem 0.9rem; cursor:pointer; transition:background 0.1s; border-bottom:1px solid var(--ruled); font-size:0.82rem; color:var(--ink); }
+    .country-item:last-child { border-bottom:none; }
+    .country-item:hover { background:#ede8da; }
+    .country-item.selected { background:var(--ink); color:#fff; }
+    .country-flag { font-size:1.2rem; flex-shrink:0; }
+    .no-results { padding:1rem; font-size:0.75rem; color:var(--muted); text-align:center; }
+    .selected-display { background:var(--ink); color:#fff; border-radius:8px; padding:0.65rem 1rem; font-size:0.82rem; margin-bottom:1.2rem; display:none; align-items:center; gap:0.6rem; justify-content:space-between; }
+    .selected-display.show { display:flex; }
+    .change-btn { font-size:0.65rem; color:#c49a0a; cursor:pointer; background:none; border:none; font-family:"DM Mono",monospace; }
+
+    /* REGION + INDUSTRY + EMPLOYEES */
+    .options { display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; margin-bottom:1.5rem; }
+    .options.cols-1 { grid-template-columns:1fr; }
+    .option { background:var(--bg); border:1.5px solid var(--ruled); border-radius:10px; padding:0.9rem 0.7rem; text-align:center; cursor:pointer; transition:all 0.15s; font-size:0.78rem; color:var(--muted); }
+    .option:hover { border-color:var(--ink); color:var(--ink); }
+    .option.selected { background:var(--ink); border-color:var(--ink); color:#fff; }
+    .option .icon { font-size:1.4rem; display:block; margin-bottom:0.3rem; }
+    .emp-options { display:flex; gap:0.6rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+    .emp-option { flex:1; min-width:70px; background:var(--bg); border:1.5px solid var(--ruled); border-radius:10px; padding:0.7rem 0.4rem; text-align:center; cursor:pointer; transition:all 0.15s; font-size:0.75rem; color:var(--muted); }
+    .emp-option:hover { border-color:var(--ink); color:var(--ink); }
+    .emp-option.selected { background:var(--ink); border-color:var(--ink); color:#fff; }
+
+    .btn { width:100%; background:var(--ink); color:var(--surface); border:none; border-radius:8px; padding:0.9rem; font-family:"Architects Daughter",cursive; font-size:1rem; cursor:pointer; transition:all 0.2s; }
+    .btn:hover { background:#2d2925; }
+    .btn:disabled { opacity:0.4; cursor:not-allowed; }
+    .back-btn { background:none; border:none; color:var(--muted); font-family:"DM Mono",monospace; font-size:0.75rem; cursor:pointer; margin-bottom:1rem; padding:0; }
+    .back-btn:hover { color:var(--ink); }
+    .feedback { margin-top:0.8rem; font-size:0.75rem; text-align:center; min-height:20px; color:var(--red); }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">COM<span>PLY</span></div>
+
+  <div class="step-indicator">
+    <div class="step-dot active" id="dot-1"></div>
+    <div class="step-dot" id="dot-2"></div>
+    <div class="step-dot" id="dot-3"></div>
+    <div class="step-dot" id="dot-4"></div>
+  </div>
+
+  <!-- STEP 1: COUNTRY -->
+  <div class="step active" id="step-1">
+    <div class="step-title">Where is your business based?</div>
+    <div class="step-sub">We'll load the right compliance deadlines for your country automatically.</div>
+
+    <div class="selected-display" id="selected-display">
+      <span id="selected-label">—</span>
+      <button class="change-btn" onclick="clearCountry()">Change</button>
+    </div>
+
+    <input type="text" class="search-box" id="country-search" placeholder="🔍 Search your country..." oninput="filterCountries()" />
+    <div class="country-list" id="country-list"></div>
+
+    <button class="btn" id="btn-1" onclick="goStep(2)" disabled>Next →</button>
+  </div>
+
+  <!-- STEP 2: REGION -->
+  <div class="step" id="step-2">
+    <button class="back-btn" onclick="goStep(1)">← Back</button>
+    <div class="step-title" id="region-title">What region are you in?</div>
+    <div class="step-sub">This helps us load the most accurate deadlines for you.</div>
+    <div class="options cols-1" id="region-options"></div>
+    <button class="btn" id="btn-2" onclick="goStep(3)" disabled>Next →</button>
+  </div>
+
+  <!-- STEP 3: INDUSTRY -->
+  <div class="step" id="step-3">
+    <button class="back-btn" onclick="goStep(2)">← Back</button>
+    <div class="step-title">What kind of business do you run?</div>
+    <div class="step-sub">We'll add the specific permits your industry needs.</div>
+    <div class="options">
+      <div class="option" data-value="food" onclick="selectOption(this,'industry')"><span class="icon">🍕</span>Food & Drink</div>
+      <div class="option" data-value="retail" onclick="selectOption(this,'industry')"><span class="icon">🛍️</span>Retail</div>
+      <div class="option" data-value="services" onclick="selectOption(this,'industry')"><span class="icon">✂️</span>Services</div>
+      <div class="option" data-value="construction" onclick="selectOption(this,'industry')"><span class="icon">🔨</span>Construction</div>
+      <div class="option" data-value="freelance" onclick="selectOption(this,'industry')"><span class="icon">💻</span>Freelance</div>
+      <div class="option" data-value="other" onclick="selectOption(this,'industry')"><span class="icon">📦</span>Other</div>
+    </div>
+    <button class="btn" id="btn-3" onclick="goStep(4)" disabled>Next →</button>
+  </div>
+
+  <!-- STEP 4: EMPLOYEES -->
+  <div class="step" id="step-4">
+    <button class="back-btn" onclick="goStep(3)">← Back</button>
+    <div class="step-title">How many employees?</div>
+    <div class="step-sub">This determines which payroll deadlines apply to you.</div>
+    <div class="emp-options">
+      <div class="emp-option" data-value="solo" onclick="selectEmp(this)">Just me</div>
+      <div class="emp-option" data-value="2-5" onclick="selectEmp(this)">2–5</div>
+      <div class="emp-option" data-value="6-20" onclick="selectEmp(this)">6–20</div>
+      <div class="emp-option" data-value="20+" onclick="selectEmp(this)">20+</div>
+    </div>
+    <button class="btn" id="btn-4" onclick="finish()" disabled>Set Up My Deadlines →</button>
+    <div class="feedback" id="feedback"></div>
+  </div>
+
+</div>
+<script>
+// ── ALL 195 COUNTRIES ────────────────────────────────────────────────────────
+var allCountries = [
+  {code:"AF",name:"Afghanistan",flag:"🇦🇫"},{code:"AL",name:"Albania",flag:"🇦🇱"},{code:"DZ",name:"Algeria",flag:"🇩🇿"},
+  {code:"AD",name:"Andorra",flag:"🇦🇩"},{code:"AO",name:"Angola",flag:"🇦🇴"},{code:"AG",name:"Antigua and Barbuda",flag:"🇦🇬"},
+  {code:"AR",name:"Argentina",flag:"🇦🇷"},{code:"AM",name:"Armenia",flag:"🇦🇲"},{code:"AU",name:"Australia",flag:"🇦🇺"},
+  {code:"AT",name:"Austria",flag:"🇦🇹"},{code:"AZ",name:"Azerbaijan",flag:"🇦🇿"},{code:"BS",name:"Bahamas",flag:"🇧🇸"},
+  {code:"BH",name:"Bahrain",flag:"🇧🇭"},{code:"BD",name:"Bangladesh",flag:"🇧🇩"},{code:"BB",name:"Barbados",flag:"🇧🇧"},
+  {code:"BY",name:"Belarus",flag:"🇧🇾"},{code:"BE",name:"Belgium",flag:"🇧🇪"},{code:"BZ",name:"Belize",flag:"🇧🇿"},
+  {code:"BJ",name:"Benin",flag:"🇧🇯"},{code:"BT",name:"Bhutan",flag:"🇧🇹"},{code:"BO",name:"Bolivia",flag:"🇧🇴"},
+  {code:"BA",name:"Bosnia and Herzegovina",flag:"🇧🇦"},{code:"BW",name:"Botswana",flag:"🇧🇼"},{code:"BR",name:"Brazil",flag:"🇧🇷"},
+  {code:"BN",name:"Brunei",flag:"🇧🇳"},{code:"BG",name:"Bulgaria",flag:"🇧🇬"},{code:"BF",name:"Burkina Faso",flag:"🇧🇫"},
+  {code:"BI",name:"Burundi",flag:"🇧🇮"},{code:"CV",name:"Cabo Verde",flag:"🇨🇻"},{code:"KH",name:"Cambodia",flag:"🇰🇭"},
+  {code:"CM",name:"Cameroon",flag:"🇨🇲"},{code:"CA",name:"Canada",flag:"🇨🇦"},{code:"CF",name:"Central African Republic",flag:"🇨🇫"},
+  {code:"TD",name:"Chad",flag:"🇹🇩"},{code:"CL",name:"Chile",flag:"🇨🇱"},{code:"CN",name:"China",flag:"🇨🇳"},
+  {code:"CO",name:"Colombia",flag:"🇨🇴"},{code:"KM",name:"Comoros",flag:"🇰🇲"},{code:"CG",name:"Congo",flag:"🇨🇬"},
+  {code:"CD",name:"Congo (DR)",flag:"🇨🇩"},{code:"CR",name:"Costa Rica",flag:"🇨🇷"},{code:"HR",name:"Croatia",flag:"🇭🇷"},
+  {code:"CU",name:"Cuba",flag:"🇨🇺"},{code:"CY",name:"Cyprus",flag:"🇨🇾"},{code:"CZ",name:"Czech Republic",flag:"🇨🇿"},
+  {code:"DK",name:"Denmark",flag:"🇩🇰"},{code:"DJ",name:"Djibouti",flag:"🇩🇯"},{code:"DM",name:"Dominica",flag:"🇩🇲"},
+  {code:"DO",name:"Dominican Republic",flag:"🇩🇴"},{code:"EC",name:"Ecuador",flag:"🇪🇨"},{code:"EG",name:"Egypt",flag:"🇪🇬"},
+  {code:"SV",name:"El Salvador",flag:"🇸🇻"},{code:"GQ",name:"Equatorial Guinea",flag:"🇬🇶"},{code:"ER",name:"Eritrea",flag:"🇪🇷"},
+  {code:"EE",name:"Estonia",flag:"🇪🇪"},{code:"SZ",name:"Eswatini",flag:"🇸🇿"},{code:"ET",name:"Ethiopia",flag:"🇪🇹"},
+  {code:"FJ",name:"Fiji",flag:"🇫🇯"},{code:"FI",name:"Finland",flag:"🇫🇮"},{code:"FR",name:"France",flag:"🇫🇷"},
+  {code:"GA",name:"Gabon",flag:"🇬🇦"},{code:"GM",name:"Gambia",flag:"🇬🇲"},{code:"GE",name:"Georgia",flag:"🇬🇪"},
+  {code:"DE",name:"Germany",flag:"🇩🇪"},{code:"GH",name:"Ghana",flag:"🇬🇭"},{code:"GR",name:"Greece",flag:"🇬🇷"},
+  {code:"GD",name:"Grenada",flag:"🇬🇩"},{code:"GT",name:"Guatemala",flag:"🇬🇹"},{code:"GN",name:"Guinea",flag:"🇬🇳"},
+  {code:"GW",name:"Guinea-Bissau",flag:"🇬🇼"},{code:"GY",name:"Guyana",flag:"🇬🇾"},{code:"HT",name:"Haiti",flag:"🇭🇹"},
+  {code:"HN",name:"Honduras",flag:"🇭🇳"},{code:"HU",name:"Hungary",flag:"🇭🇺"},{code:"IS",name:"Iceland",flag:"🇮🇸"},
+  {code:"IN",name:"India",flag:"🇮🇳"},{code:"ID",name:"Indonesia",flag:"🇮🇩"},{code:"IR",name:"Iran",flag:"🇮🇷"},
+  {code:"IQ",name:"Iraq",flag:"🇮🇶"},{code:"IE",name:"Ireland",flag:"🇮🇪"},{code:"IL",name:"Israel",flag:"🇮🇱"},
+  {code:"IT",name:"Italy",flag:"🇮🇹"},{code:"JM",name:"Jamaica",flag:"🇯🇲"},{code:"JP",name:"Japan",flag:"🇯🇵"},
+  {code:"JO",name:"Jordan",flag:"🇯🇴"},{code:"KZ",name:"Kazakhstan",flag:"🇰🇿"},{code:"KE",name:"Kenya",flag:"🇰🇪"},
+  {code:"KI",name:"Kiribati",flag:"🇰🇮"},{code:"KP",name:"Korea (North)",flag:"🇰🇵"},{code:"KR",name:"Korea (South)",flag:"🇰🇷"},
+  {code:"KW",name:"Kuwait",flag:"🇰🇼"},{code:"KG",name:"Kyrgyzstan",flag:"🇰🇬"},{code:"LA",name:"Laos",flag:"🇱🇦"},
+  {code:"LV",name:"Latvia",flag:"🇱🇻"},{code:"LB",name:"Lebanon",flag:"🇱🇧"},{code:"LS",name:"Lesotho",flag:"🇱🇸"},
+  {code:"LR",name:"Liberia",flag:"🇱🇷"},{code:"LY",name:"Libya",flag:"🇱🇾"},{code:"LI",name:"Liechtenstein",flag:"🇱🇮"},
+  {code:"LT",name:"Lithuania",flag:"🇱🇹"},{code:"LU",name:"Luxembourg",flag:"🇱🇺"},{code:"MG",name:"Madagascar",flag:"🇲🇬"},
+  {code:"MW",name:"Malawi",flag:"🇲🇼"},{code:"MY",name:"Malaysia",flag:"🇲🇾"},{code:"MV",name:"Maldives",flag:"🇲🇻"},
+  {code:"ML",name:"Mali",flag:"🇲🇱"},{code:"MT",name:"Malta",flag:"🇲🇹"},{code:"MH",name:"Marshall Islands",flag:"🇲🇭"},
+  {code:"MR",name:"Mauritania",flag:"🇲🇷"},{code:"MU",name:"Mauritius",flag:"🇲🇺"},{code:"MX",name:"Mexico",flag:"🇲🇽"},
+  {code:"FM",name:"Micronesia",flag:"🇫🇲"},{code:"MD",name:"Moldova",flag:"🇲🇩"},{code:"MC",name:"Monaco",flag:"🇲🇨"},
+  {code:"MN",name:"Mongolia",flag:"🇲🇳"},{code:"ME",name:"Montenegro",flag:"🇲🇪"},{code:"MA",name:"Morocco",flag:"🇲🇦"},
+  {code:"MZ",name:"Mozambique",flag:"🇲🇿"},{code:"MM",name:"Myanmar",flag:"🇲🇲"},{code:"NA",name:"Namibia",flag:"🇳🇦"},
+  {code:"NR",name:"Nauru",flag:"🇳🇷"},{code:"NP",name:"Nepal",flag:"🇳🇵"},{code:"NL",name:"Netherlands",flag:"🇳🇱"},
+  {code:"NZ",name:"New Zealand",flag:"🇳🇿"},{code:"NI",name:"Nicaragua",flag:"🇳🇮"},{code:"NE",name:"Niger",flag:"🇳🇪"},
+  {code:"NG",name:"Nigeria",flag:"🇳🇬"},{code:"MK",name:"North Macedonia",flag:"🇲🇰"},{code:"NO",name:"Norway",flag:"🇳🇴"},
+  {code:"OM",name:"Oman",flag:"🇴🇲"},{code:"PK",name:"Pakistan",flag:"🇵🇰"},{code:"PW",name:"Palau",flag:"🇵🇼"},
+  {code:"PA",name:"Panama",flag:"🇵🇦"},{code:"PG",name:"Papua New Guinea",flag:"🇵🇬"},{code:"PY",name:"Paraguay",flag:"🇵🇾"},
+  {code:"PE",name:"Peru",flag:"🇵🇪"},{code:"PH",name:"Philippines",flag:"🇵🇭"},{code:"PL",name:"Poland",flag:"🇵🇱"},
+  {code:"PT",name:"Portugal",flag:"🇵🇹"},{code:"QA",name:"Qatar",flag:"🇶🇦"},{code:"RO",name:"Romania",flag:"🇷🇴"},
+  {code:"RU",name:"Russia",flag:"🇷🇺"},{code:"RW",name:"Rwanda",flag:"🇷🇼"},{code:"KN",name:"Saint Kitts and Nevis",flag:"🇰🇳"},
+  {code:"LC",name:"Saint Lucia",flag:"🇱🇨"},{code:"VC",name:"Saint Vincent",flag:"🇻🇨"},{code:"WS",name:"Samoa",flag:"🇼🇸"},
+  {code:"SM",name:"San Marino",flag:"🇸🇲"},{code:"ST",name:"Sao Tome and Principe",flag:"🇸🇹"},{code:"SA",name:"Saudi Arabia",flag:"🇸🇦"},
+  {code:"SN",name:"Senegal",flag:"🇸🇳"},{code:"RS",name:"Serbia",flag:"🇷🇸"},{code:"SC",name:"Seychelles",flag:"🇸🇨"},
+  {code:"SL",name:"Sierra Leone",flag:"🇸🇱"},{code:"SG",name:"Singapore",flag:"🇸🇬"},{code:"SK",name:"Slovakia",flag:"🇸🇰"},
+  {code:"SI",name:"Slovenia",flag:"🇸🇮"},{code:"SB",name:"Solomon Islands",flag:"🇸🇧"},{code:"SO",name:"Somalia",flag:"🇸🇴"},
+  {code:"ZA",name:"South Africa",flag:"🇿🇦"},{code:"SS",name:"South Sudan",flag:"🇸🇸"},{code:"ES",name:"Spain",flag:"🇪🇸"},
+  {code:"LK",name:"Sri Lanka",flag:"🇱🇰"},{code:"SD",name:"Sudan",flag:"🇸🇩"},{code:"SR",name:"Suriname",flag:"🇸🇷"},
+  {code:"SE",name:"Sweden",flag:"🇸🇪"},{code:"CH",name:"Switzerland",flag:"🇨🇭"},{code:"SY",name:"Syria",flag:"🇸🇾"},
+  {code:"TW",name:"Taiwan",flag:"🇹🇼"},{code:"TJ",name:"Tajikistan",flag:"🇹🇯"},{code:"TZ",name:"Tanzania",flag:"🇹🇿"},
+  {code:"TH",name:"Thailand",flag:"🇹🇭"},{code:"TL",name:"Timor-Leste",flag:"🇹🇱"},{code:"TG",name:"Togo",flag:"🇹🇬"},
+  {code:"TO",name:"Tonga",flag:"🇹🇴"},{code:"TT",name:"Trinidad and Tobago",flag:"🇹🇹"},{code:"TN",name:"Tunisia",flag:"🇹🇳"},
+  {code:"TR",name:"Turkey",flag:"🇹🇷"},{code:"TM",name:"Turkmenistan",flag:"🇹🇲"},{code:"TV",name:"Tuvalu",flag:"🇹🇻"},
+  {code:"UG",name:"Uganda",flag:"🇺🇬"},{code:"UA",name:"Ukraine",flag:"🇺🇦"},{code:"AE",name:"United Arab Emirates",flag:"🇦🇪"},
+  {code:"UK",name:"United Kingdom",flag:"🇬🇧"},{code:"US",name:"United States",flag:"🇺🇸"},{code:"UY",name:"Uruguay",flag:"🇺🇾"},
+  {code:"UZ",name:"Uzbekistan",flag:"🇺🇿"},{code:"VU",name:"Vanuatu",flag:"🇻🇺"},{code:"VE",name:"Venezuela",flag:"🇻🇪"},
+  {code:"VN",name:"Vietnam",flag:"🇻🇳"},{code:"YE",name:"Yemen",flag:"🇾🇪"},{code:"ZM",name:"Zambia",flag:"🇿🇲"},
+  {code:"ZW",name:"Zimbabwe",flag:"🇿🇼"}
+];
+
+// Regions for countries with detailed breakdown
+var regions = {
+  PT: [{value:"norte",label:"Norte",flag:"🏔️"},{value:"centro",label:"Centro",flag:"🌲"},{value:"lisboa",label:"Lisboa",flag:"🏙️"},{value:"alentejo",label:"Alentejo",flag:"🌾"},{value:"algarve",label:"Algarve",flag:"🏖️"},{value:"acores",label:"Açores",flag:"🌊"},{value:"madeira",label:"Madeira",flag:"🌺"}],
+  US: [{value:"CA",label:"California",flag:"🌴"},{value:"TX",label:"Texas",flag:"⭐"},{value:"NY",label:"New York",flag:"🗽"},{value:"FL",label:"Florida",flag:"🌞"},{value:"OTHER",label:"Other State",flag:"📍"}],
+  UK: [{value:"england",label:"England",flag:"🏴"},{value:"scotland",label:"Scotland",flag:"🏴"},{value:"wales",label:"Wales",flag:"🏴"},{value:"nireland",label:"N. Ireland",flag:"☘️"}],
+  BR: [{value:"sp",label:"São Paulo",flag:"🏙️"},{value:"rj",label:"Rio de Janeiro",flag:"🌅"},{value:"mg",label:"Minas Gerais",flag:"⛏️"},{value:"other_br",label:"Other State",flag:"📍"}],
+  CA: [{value:"on",label:"Ontario",flag:"🍁"},{value:"bc",label:"British Columbia",flag:"🏔️"},{value:"qc",label:"Quebec",flag:"⚜️"},{value:"other_ca",label:"Other Province",flag:"📍"}],
+  AU: [{value:"nsw",label:"New South Wales",flag:"🦘"},{value:"vic",label:"Victoria",flag:"🏙️"},{value:"qld",label:"Queensland",flag:"☀️"},{value:"other_au",label:"Other State",flag:"📍"}],
+  DE: [{value:"bavaria",label:"Bavaria",flag:"🍺"},{value:"berlin",label:"Berlin",flag:"🏙️"},{value:"nrw",label:"North Rhine-Westphalia",flag:"🏭"},{value:"other_de",label:"Other State",flag:"📍"}],
+  ES: [{value:"madrid",label:"Madrid",flag:"🏙️"},{value:"catalonia",label:"Catalonia",flag:"🌹"},{value:"andalusia",label:"Andalusia",flag:"☀️"},{value:"other_es",label:"Other Region",flag:"📍"}],
+};
+
+var selected = { country:null, countryName:null, region:null, industry:null, employees:null };
+var filteredCountries = allCountries.slice();
+
+// ── RENDER COUNTRY LIST ──────────────────────────────────────────────────────
+function renderCountries() {
+  var list = document.getElementById("country-list");
+  if (filteredCountries.length === 0) {
+    list.innerHTML = '<div class="no-results">No countries found. Try a different search.</div>';
+    return;
+  }
+  list.innerHTML = filteredCountries.map(function(c) {
+    var sel = selected.country === c.code ? " selected" : "";
+    return '<div class="country-item'+sel+'" onclick="selectCountry(\''+c.code+'\',\''+c.name+'\',\''+c.flag+'\')">' +
+      '<span class="country-flag">'+c.flag+'</span>' +
+      '<span>'+c.name+'</span>' +
+      '</div>';
+  }).join("");
+}
+
+function filterCountries() {
+  var q = document.getElementById("country-search").value.toLowerCase();
+  filteredCountries = allCountries.filter(function(c){ return c.name.toLowerCase().indexOf(q) !== -1; });
+  renderCountries();
+}
+
+function selectCountry(code, name, flag) {
+  selected.country     = code;
+  selected.countryName = name;
+  selected.region      = null;
+
+  // Show selected display, hide search
+  document.getElementById("selected-display").classList.add("show");
+  document.getElementById("selected-label").textContent = flag + " " + name;
+  document.getElementById("country-search").style.display = "none";
+  document.getElementById("country-list").style.display   = "none";
+  document.getElementById("btn-1").disabled = false;
+}
+
+function clearCountry() {
+  selected.country = null;
+  document.getElementById("selected-display").classList.remove("show");
+  document.getElementById("country-search").style.display = "block";
+  document.getElementById("country-list").style.display   = "block";
+  document.getElementById("country-search").value = "";
+  filteredCountries = allCountries.slice();
+  renderCountries();
+  document.getElementById("btn-1").disabled = true;
+}
+
+// ── REGION ───────────────────────────────────────────────────────────────────
+function buildRegions(code) {
+  var container = document.getElementById("region-options");
+  var list      = regions[code];
+
+  if (!list) {
+    // Country has no specific regions — skip to step 3
+    selected.region = "national";
+    goStep(3);
+    return true; // signals to skip
+  }
+
+  var titles = { PT:"Qual é a sua região?", US:"What state are you in?", UK:"Which part of the UK?", BR:"Qual é o seu estado?", CA:"Which province?", AU:"Which state?", DE:"Which state?", ES:"Which region?" };
+  document.getElementById("region-title").textContent = titles[code] || "What region are you in?";
+
+  container.innerHTML = list.map(function(r){
+    return '<div class="option" data-value="'+r.value+'" onclick="selectOption(this,\'region\')"><span class="icon">'+r.flag+'</span>'+r.label+'</div>';
+  }).join("");
+
+  return false;
+}
+
+// ── GENERIC SELECT ────────────────────────────────────────────────────────────
+function selectOption(el, type) {
+  el.parentElement.querySelectorAll(".option").forEach(function(o){ o.classList.remove("selected"); });
+  el.classList.add("selected");
+  selected[type] = el.dataset.value;
+  if (type === "region")   document.getElementById("btn-2").disabled = false;
+  if (type === "industry") document.getElementById("btn-3").disabled = false;
+}
+
+function selectEmp(el) {
+  document.querySelectorAll(".emp-option").forEach(function(o){ o.classList.remove("selected"); });
+  el.classList.add("selected");
+  selected.employees = el.dataset.value;
+  document.getElementById("btn-4").disabled = false;
+}
+
+// ── NAVIGATION ────────────────────────────────────────────────────────────────
+function goStep(n) {
+  if (n === 2) {
+    var skip = buildRegions(selected.country);
+    if (skip) return; // jumped to step 3 already
+    document.getElementById("btn-2").disabled = true;
+  }
+
+  document.querySelectorAll(".step").forEach(function(s){ s.classList.remove("active"); });
+  document.getElementById("step-" + n).classList.add("active");
+
+  for (var i = 1; i <= 4; i++) {
+    var dot = document.getElementById("dot-" + i);
+    dot.classList.remove("active","done");
+    if (i < n)  dot.classList.add("done");
+    if (i === n) dot.classList.add("active");
+  }
+}
+
+// ── FINISH ────────────────────────────────────────────────────────────────────
+async function finish() {
+  var btn      = document.getElementById("btn-4");
+  var feedback = document.getElementById("feedback");
+  btn.textContent = "Setting up your deadlines...";
+  btn.disabled    = true;
+
+  var res  = await fetch("/api/onboard", {
+    method:  "POST",
+    headers: { "Content-Type":"application/json" },
+    body:    JSON.stringify(selected)
+  });
+  var data = await res.json();
+
+  if (res.ok) {
+    window.location.href = "/";
+  } else {
+    feedback.textContent = data.error || "Something went wrong.";
+    btn.textContent  = "Set Up My Deadlines →";
+    btn.disabled     = false;
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+renderCountries();
+</script>
+</body>
+</html>
