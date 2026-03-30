@@ -9,9 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 
 app = Flask(__name__)
-import os
-
-app.secret_key = os.environ.get("SECRET_KEY", "local-dev-key")
+app.secret_key = "comply-secret-key-change-this-later"
 CORS(app)
 
 DATABASE = "database.db"
@@ -3085,7 +3083,7 @@ def current_user_id():
 @app.route("/")
 def home():
     if not logged_in():
-        return redirect("/landing")
+        return redirect("/login")
     conn = get_db()
     user = conn.execute(
         "SELECT * FROM users WHERE id=?", (current_user_id(),)
@@ -3188,11 +3186,19 @@ def logout():
 def me():
     if not logged_in():
         return jsonify({"error": "Not logged in"}), 401
+    conn = get_db()
+    user = conn.execute(
+        "SELECT * FROM users WHERE id=?", (current_user_id(),)
+    ).fetchone()
+    conn.close()
     return jsonify(
         {
             "id": current_user_id(),
             "email": session.get("user_email"),
             "business_name": session.get("business_name"),
+            "monthly_revenue": user["monthly_revenue"]
+            if user and "monthly_revenue" in user.keys()
+            else 5000,
         }
     )
 
@@ -3210,12 +3216,18 @@ def onboard():
     region = data.get("region", "national")
     industry = data.get("industry", "other")
     employees = data.get("employees", "solo")
+    monthly_revenue = data.get("monthly_revenue", 5000)
     uid = current_user_id()
 
     conn = get_db()
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN monthly_revenue INTEGER DEFAULT 0")
+    except:
+        pass
+
     conn.execute(
-        "UPDATE users SET country=?, region=?, industry=?, employees=?, onboarded=1 WHERE id=?",
-        (country, region, industry, employees, uid),
+        "UPDATE users SET country=?, region=?, industry=?, employees=?, monthly_revenue=?, onboarded=1 WHERE id=?",
+        (country, region, industry, employees, monthly_revenue, uid),
     )
     conn.execute("DELETE FROM deadlines WHERE user_id=?", (uid,))
 
