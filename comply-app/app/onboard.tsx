@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, ActivityIndicator, FlatList
+  StyleSheet, ActivityIndicator, FlatList, KeyboardAvoidingView, Platform
 } from 'react-native';
 import { router } from 'expo-router';
 
@@ -61,27 +61,25 @@ const EMPLOYEES = [
   {value:'20+',label:'20+'},
 ];
 
-const REVENUE_OPTIONS = [
-  {value:1000,  label:'Under €1,000',   icon:'🌱'},
-  {value:5000,  label:'€1k – €5k',      icon:'📈'},
-  {value:15000, label:'€5k – €15k',     icon:'💼'},
-  {value:30000, label:'€15k – €30k',    icon:'🏢'},
-  {value:50000, label:'€30k – €50k',    icon:'🚀'},
-  {value:100000,label:'Over €50k',      icon:'💎'},
-];
-
 export default function OnboardScreen() {
-  const [step, setStep]           = useState(1);
-  const [search, setSearch]       = useState('');
-  const [country, setCountry]     = useState<any>(null);
-  const [industry, setIndustry]   = useState('');
-  const [employees, setEmployees] = useState('');
-  const [revenue, setRevenue]     = useState(0);
-  const [loading, setLoading]     = useState(false);
+  const [step, setStep]             = useState(1);
+  const [search, setSearch]         = useState('');
+  const [country, setCountry]       = useState<any>(null);
+  const [industry, setIndustry]     = useState('');
+  const [employees, setEmployees]   = useState('');
+  const [revenueText, setRevenueText] = useState('');
+  const [loading, setLoading]       = useState(false);
 
   const filtered = COUNTRIES.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  const revenueNum = parseInt(revenueText.replace(/[^0-9]/g, '')) || 0;
+
+  // Live penalty preview based on entered revenue
+  const estimatedPenalty = revenueNum > 0
+    ? Math.round((revenueNum * 3) * 0.10 + 200)
+    : 0;
 
   const finish = async () => {
     setLoading(true);
@@ -95,7 +93,7 @@ export default function OnboardScreen() {
           region:          'national',
           industry,
           employees,
-          monthly_revenue: revenue,
+          monthly_revenue: revenueNum || 5000,
         }),
       });
       if (res.ok) router.replace('/(tabs)');
@@ -108,198 +106,203 @@ export default function OnboardScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
+      <View style={styles.container}>
 
-      {/* HEADER */}
-      <View style={styles.header}>
-        <Text style={styles.logo}>COM<Text style={styles.gold}>PLY</Text></Text>
-        <View style={styles.dots}>
-          {[1,2,3,4].map(i => (
-            <View key={i} style={[
-              styles.dot,
-              step === i && styles.dotActive,
-              step > i  && styles.dotDone
-            ]} />
-          ))}
+        {/* HEADER */}
+        <View style={styles.header}>
+          <Text style={styles.logo}>COM<Text style={styles.gold}>PLY</Text></Text>
+          <View style={styles.dots}>
+            {[1,2,3,4].map(i => (
+              <View key={i} style={[
+                styles.dot,
+                step === i && styles.dotActive,
+                step > i  && styles.dotDone
+              ]} />
+            ))}
+          </View>
+          <Text style={styles.stepLabel}>Step {step} of 4</Text>
         </View>
-        <Text style={styles.stepLabel}>Step {step} of 4</Text>
-      </View>
 
-      {/* ── STEP 1: COUNTRY ── */}
-      {step === 1 && (
-        <View style={styles.stepWrap}>
-          <Text style={styles.stepTitle}>Where is your business?</Text>
-          <Text style={styles.stepSub}>We'll load the right deadlines for your country automatically.</Text>
+        {/* ── STEP 1: COUNTRY ── */}
+        {step === 1 && (
+          <View style={styles.stepWrap}>
+            <Text style={styles.stepTitle}>Where is your business?</Text>
+            <Text style={styles.stepSub}>We'll load the right deadlines for your country automatically.</Text>
 
-          {country ? (
-            <View style={styles.selectedCountry}>
-              <Text style={styles.selectedText}>{country.flag}  {country.name}</Text>
-              <TouchableOpacity onPress={() => { setCountry(null); setSearch(''); }}>
-                <Text style={styles.changeBtn}>Change</Text>
-              </TouchableOpacity>
+            {country ? (
+              <View style={styles.selectedCountry}>
+                <Text style={styles.selectedText}>{country.flag}  {country.name}</Text>
+                <TouchableOpacity onPress={() => { setCountry(null); setSearch(''); }}>
+                  <Text style={styles.changeBtn}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={styles.search}
+                  placeholder="🔍 Search your country..."
+                  placeholderTextColor={C.muted}
+                  value={search}
+                  onChangeText={setSearch}
+                />
+                <FlatList
+                  data={filtered.slice(0, 50)}
+                  keyExtractor={item => item.code}
+                  style={styles.countryList}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.countryItem}
+                      onPress={() => { setCountry(item); setSearch(''); }}
+                    >
+                      <Text style={styles.countryFlag}>{item.flag}</Text>
+                      <Text style={styles.countryName}>{item.name}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              </>
+            )}
+
+            <TouchableOpacity
+              style={[styles.btn, !country && styles.btnDisabled]}
+              onPress={() => country && setStep(2)}
+              disabled={!country}
+            >
+              <Text style={styles.btnText}>Next →</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── STEP 2: INDUSTRY ── */}
+        {step === 2 && (
+          <ScrollView style={styles.stepWrap}>
+            <TouchableOpacity onPress={() => setStep(1)} style={styles.backBtn}>
+              <Text style={styles.backBtnText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.stepTitle}>What kind of business?</Text>
+            <Text style={styles.stepSub}>We'll add the specific permits your industry needs.</Text>
+
+            <View style={styles.optionsGrid}>
+              {INDUSTRIES.map(ind => (
+                <TouchableOpacity
+                  key={ind.value}
+                  style={[styles.option, industry === ind.value && styles.optionSelected]}
+                  onPress={() => setIndustry(ind.value)}
+                >
+                  <Text style={styles.optionIcon}>{ind.icon}</Text>
+                  <Text style={[styles.optionLabel, industry === ind.value && styles.optionLabelSelected]}>
+                    {ind.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          ) : (
-            <>
+
+            <TouchableOpacity
+              style={[styles.btn, !industry && styles.btnDisabled]}
+              onPress={() => industry && setStep(3)}
+              disabled={!industry}
+            >
+              <Text style={styles.btnText}>Next →</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
+
+        {/* ── STEP 3: EMPLOYEES ── */}
+        {step === 3 && (
+          <View style={styles.stepWrap}>
+            <TouchableOpacity onPress={() => setStep(2)} style={styles.backBtn}>
+              <Text style={styles.backBtnText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.stepTitle}>How many employees?</Text>
+            <Text style={styles.stepSub}>This determines which payroll deadlines apply to you.</Text>
+
+            <View style={styles.empRow}>
+              {EMPLOYEES.map(e => (
+                <TouchableOpacity
+                  key={e.value}
+                  style={[styles.empOption, employees === e.value && styles.empOptionSelected]}
+                  onPress={() => setEmployees(e.value)}
+                >
+                  <Text style={[styles.empLabel, employees === e.value && styles.empLabelSelected]}>
+                    {e.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.btn, !employees && styles.btnDisabled]}
+              onPress={() => employees && setStep(4)}
+              disabled={!employees}
+            >
+              <Text style={styles.btnText}>Next →</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── STEP 4: REVENUE ── */}
+        {step === 4 && (
+          <ScrollView style={styles.stepWrap}>
+            <TouchableOpacity onPress={() => setStep(3)} style={styles.backBtn}>
+              <Text style={styles.backBtnText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.stepTitle}>Monthly revenue?</Text>
+            <Text style={styles.stepSub}>
+              We use this to calculate your exact penalty if you miss a deadline. Your data is private and never shared.
+            </Text>
+
+            {/* Revenue input */}
+            <View style={styles.revenueInputWrap}>
+              <Text style={styles.currencySymbol}>€</Text>
               <TextInput
-                style={styles.search}
-                placeholder="🔍 Search your country..."
+                style={styles.revenueInput}
+                placeholder="e.g. 8500"
                 placeholderTextColor={C.muted}
-                value={search}
-                onChangeText={setSearch}
+                value={revenueText}
+                onChangeText={setRevenueText}
+                keyboardType="numeric"
+                autoFocus
               />
-              <FlatList
-                data={filtered.slice(0, 50)}
-                keyExtractor={item => item.code}
-                style={styles.countryList}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.countryItem}
-                    onPress={() => { setCountry(item); setSearch(''); }}
-                  >
-                    <Text style={styles.countryFlag}>{item.flag}</Text>
-                    <Text style={styles.countryName}>{item.name}</Text>
-                  </TouchableOpacity>
-                )}
-              />
-            </>
-          )}
-
-          <TouchableOpacity
-            style={[styles.btn, !country && styles.btnDisabled]}
-            onPress={() => country && setStep(2)}
-            disabled={!country}
-          >
-            <Text style={styles.btnText}>Next →</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── STEP 2: INDUSTRY ── */}
-      {step === 2 && (
-        <ScrollView style={styles.stepWrap}>
-          <TouchableOpacity onPress={() => setStep(1)} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.stepTitle}>What kind of business?</Text>
-          <Text style={styles.stepSub}>We'll add the specific permits your industry needs.</Text>
-
-          <View style={styles.optionsGrid}>
-            {INDUSTRIES.map(ind => (
-              <TouchableOpacity
-                key={ind.value}
-                style={[styles.option, industry === ind.value && styles.optionSelected]}
-                onPress={() => setIndustry(ind.value)}
-              >
-                <Text style={styles.optionIcon}>{ind.icon}</Text>
-                <Text style={[styles.optionLabel, industry === ind.value && styles.optionLabelSelected]}>
-                  {ind.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <TouchableOpacity
-            style={[styles.btn, !industry && styles.btnDisabled]}
-            onPress={() => industry && setStep(3)}
-            disabled={!industry}
-          >
-            <Text style={styles.btnText}>Next →</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      )}
-
-      {/* ── STEP 3: EMPLOYEES ── */}
-      {step === 3 && (
-        <View style={styles.stepWrap}>
-          <TouchableOpacity onPress={() => setStep(2)} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.stepTitle}>How many employees?</Text>
-          <Text style={styles.stepSub}>This determines which payroll deadlines apply to you.</Text>
-
-          <View style={styles.empRow}>
-            {EMPLOYEES.map(e => (
-              <TouchableOpacity
-                key={e.value}
-                style={[styles.empOption, employees === e.value && styles.empOptionSelected]}
-                onPress={() => setEmployees(e.value)}
-              >
-                <Text style={[styles.empLabel, employees === e.value && styles.empLabelSelected]}>
-                  {e.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <TouchableOpacity
-            style={[styles.btn, !employees && styles.btnDisabled]}
-            onPress={() => employees && setStep(4)}
-            disabled={!employees}
-          >
-            <Text style={styles.btnText}>Next →</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── STEP 4: REVENUE ── */}
-      {step === 4 && (
-        <ScrollView style={styles.stepWrap}>
-          <TouchableOpacity onPress={() => setStep(3)} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.stepTitle}>Monthly revenue?</Text>
-          <Text style={styles.stepSub}>
-            We use this to calculate your exact penalty if you miss a deadline. Your data is private and never shared.
-          </Text>
-
-          <View style={styles.optionsGrid}>
-            {REVENUE_OPTIONS.map(r => (
-              <TouchableOpacity
-                key={r.value}
-                style={[styles.option, revenue === r.value && styles.optionSelected]}
-                onPress={() => setRevenue(r.value)}
-              >
-                <Text style={styles.optionIcon}>{r.icon}</Text>
-                <Text style={[styles.optionLabel, revenue === r.value && styles.optionLabelSelected]}>
-                  {r.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Penalty preview */}
-          {revenue > 0 && (
-            <View style={styles.penaltyPreview}>
-              <Text style={styles.penaltyPreviewTitle}>⚠️ If you miss a VAT/IVA filing:</Text>
-              <Text style={styles.penaltyPreviewAmount}>
-                ~{new Intl.NumberFormat('en', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Math.round(revenue * 0.1))} penalty
-              </Text>
-              <Text style={styles.penaltyPreviewSub}>Based on typical 10% of quarterly tax owed</Text>
+              <Text style={styles.revenueUnit}>/month</Text>
             </View>
-          )}
 
-          <TouchableOpacity
-            style={[styles.btn, (!revenue || loading) && styles.btnDisabled]}
-            onPress={finish}
-            disabled={!revenue || loading}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.btnText}>Set Up My Deadlines →</Text>
-            }
-          </TouchableOpacity>
+            {/* Live penalty preview */}
+            {revenueNum > 0 && (
+              <View style={styles.penaltyPreview}>
+                <Text style={styles.penaltyPreviewTitle}>⚠️ If you miss a quarterly tax filing:</Text>
+                <Text style={styles.penaltyPreviewAmount}>
+                  ~€{estimatedPenalty.toLocaleString()}
+                </Text>
+                <Text style={styles.penaltyPreviewSub}>
+                  Based on €{revenueNum.toLocaleString()}/month · 10% of quarterly revenue + fixed fine
+                </Text>
+              </View>
+            )}
 
-          <TouchableOpacity style={styles.skipBtn} onPress={() => { setRevenue(5000); finish(); }}>
-            <Text style={styles.skipBtnText}>Skip this step</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      )}
+            <TouchableOpacity
+              style={[styles.btn, (!revenueNum || loading) && styles.btnDisabled]}
+              onPress={finish}
+              disabled={!revenueNum || loading}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.btnText}>Set Up My Deadlines →</Text>
+              }
+            </TouchableOpacity>
 
-    </View>
+            <TouchableOpacity style={styles.skipBtn} onPress={() => { setRevenueText('5000'); setTimeout(finish, 100); }}>
+              <Text style={styles.skipBtnText}>Skip this step</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
+
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex:                { flex:1, backgroundColor:C.bg },
   container:           { flex:1, backgroundColor:C.bg },
   header:              { backgroundColor:C.ink, paddingTop:60, paddingBottom:20, paddingHorizontal:24, alignItems:'center' },
   logo:                { fontSize:28, fontWeight:'900', color:'#fff', marginBottom:12 },
@@ -331,10 +334,14 @@ const styles = StyleSheet.create({
   empOptionSelected:   { backgroundColor:C.ink, borderColor:C.ink },
   empLabel:            { fontSize:13, color:C.muted },
   empLabelSelected:    { color:'#fff' },
+  revenueInputWrap:    { flexDirection:'row', alignItems:'center', backgroundColor:C.surface, borderWidth:2, borderColor:C.ink, borderRadius:12, paddingHorizontal:16, paddingVertical:4, marginBottom:20 },
+  currencySymbol:      { fontSize:28, fontWeight:'700', color:C.ink, marginRight:6 },
+  revenueInput:        { flex:1, fontSize:32, fontWeight:'700', color:C.ink, paddingVertical:12 },
+  revenueUnit:         { fontSize:14, color:C.muted },
   penaltyPreview:      { backgroundColor:'#fff0ee', borderWidth:1.5, borderColor:'#f5c0b8', borderRadius:10, padding:16, marginBottom:20, alignItems:'center' },
   penaltyPreviewTitle: { fontSize:12, color:'#7a2a20', marginBottom:6 },
-  penaltyPreviewAmount:{ fontSize:28, fontWeight:'900', color:C.red },
-  penaltyPreviewSub:   { fontSize:11, color:'#7a2a20', marginTop:4 },
+  penaltyPreviewAmount:{ fontSize:32, fontWeight:'900', color:C.red },
+  penaltyPreviewSub:   { fontSize:11, color:'#7a2a20', marginTop:4, textAlign:'center', lineHeight:16 },
   backBtn:             { marginBottom:8 },
   backBtnText:         { fontSize:13, color:C.muted },
   btn:                 { backgroundColor:C.ink, borderRadius:8, padding:16, alignItems:'center' },
