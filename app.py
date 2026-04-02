@@ -24,6 +24,22 @@ def get_db():
     return conn
 
 
+def init_feed_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS feed_posts (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            score       INTEGER NOT NULL,
+            country     TEXT,
+            industry    TEXT,
+            anonymous   INTEGER DEFAULT 0,
+            likes       INTEGER DEFAULT 0,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+
 def init_db():
     conn = get_db()
     conn.execute("""
@@ -68,6 +84,10 @@ def init_db():
             conn.execute(f"ALTER TABLE users ADD COLUMN {col}")
         except:
             pass
+
+    # ── Create feed_posts table ──────────────────────────────────────────────
+    init_feed_table(conn)
+
     conn.commit()
     conn.close()
 
@@ -3327,40 +3347,11 @@ def delete_deadline(did):
     return jsonify({"success": True})
 
 
-# ── START ─────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    init_db()
-    print("COMPLY is ready!")
-    app.run(debug=True)
-
-
-def init_feed_table():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS feed_posts (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL,
-            score       INTEGER NOT NULL,
-            country     TEXT,
-            industry    TEXT,
-            anonymous   INTEGER DEFAULT 0,
-            likes       INTEGER DEFAULT 0,
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    """)
-    conn.commit()
-
-
-# Call init_feed_table() at the bottom of your existing init_db() function.
-
-
-# ── 2. New routes — paste after your existing routes ─────────────────────────
+# ── FEED ─────────────────────────────────────────────────────────────────────
 
 
 @app.route("/api/feed", methods=["GET"])
 def get_feed():
-    """Return the 50 most recent feed posts."""
     conn = get_db()
     rows = conn.execute("""
         SELECT
@@ -3378,12 +3369,12 @@ def get_feed():
         ORDER BY fp.created_at DESC
         LIMIT 50
     """).fetchall()
+    conn.close()
     return jsonify([dict(r) for r in rows])
 
 
 @app.route("/api/feed/post", methods=["POST"])
 def post_to_feed():
-    """Share current compliance score to the community feed."""
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
@@ -3392,8 +3383,6 @@ def post_to_feed():
     anonymous = 1 if data.get("anonymous", False) else 0
 
     conn = get_db()
-
-    # Fetch country + industry from user profile
     user = conn.execute(
         "SELECT country, industry FROM users WHERE id = ?", (session["user_id"],)
     ).fetchone()
@@ -3401,45 +3390,44 @@ def post_to_feed():
     country = user["country"] if user else ""
     industry = user["industry"] if user else ""
 
-    # Prevent spamming: one post per user per day
     existing = conn.execute(
         """
         SELECT id FROM feed_posts
         WHERE user_id = ? AND DATE(created_at) = DATE('now')
-    """,
+        """,
         (session["user_id"],),
     ).fetchone()
 
     if existing:
-        # Update today's post instead of inserting a new one
         conn.execute(
-            """
-            UPDATE feed_posts
-            SET score = ?, anonymous = ?
-            WHERE id = ?
-        """,
+            "UPDATE feed_posts SET score = ?, anonymous = ? WHERE id = ?",
             (score, anonymous, existing["id"]),
         )
     else:
         conn.execute(
-            """
-            INSERT INTO feed_posts (user_id, score, country, industry, anonymous)
-            VALUES (?, ?, ?, ?, ?)
-        """,
+            "INSERT INTO feed_posts (user_id, score, country, industry, anonymous) VALUES (?, ?, ?, ?, ?)",
             (session["user_id"], score, country, industry, anonymous),
         )
 
     conn.commit()
+    conn.close()
     return jsonify({"ok": True})
 
 
 @app.route("/api/feed/<int:post_id>/like", methods=["PATCH"])
 def like_post(post_id):
-    """Increment like count on a post."""
     conn = get_db()
     conn.execute("UPDATE feed_posts SET likes = likes + 1 WHERE id = ?", (post_id,))
     conn.commit()
     row = conn.execute(
         "SELECT likes FROM feed_posts WHERE id = ?", (post_id,)
     ).fetchone()
+    conn.close()
     return jsonify({"likes": row["likes"] if row else 0})
+
+
+# ── START ─────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    init_db()
+    print("COMPLY is ready!")
+    app.run(debug=True)
