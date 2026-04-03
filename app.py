@@ -3658,17 +3658,3 @@ def get_inbox():
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
-
-
-@app.route("/admin/resetdb")
-def reset_db_route():
-    conn = get_db()
-    conn.execute("DROP TABLE IF EXISTS feed_posts")
-    conn.execute("DROP TABLE IF EXISTS accountant_messages")
-    conn.execute("DROP TABLE IF EXISTS accountant_profiles")
-    conn.execute("DROP TABLE IF EXISTS deadlines")
-    conn.execute("DROP TABLE IF EXISTS users")
-    conn.commit()
-    conn.close()
-    init_db()
-    return "Database reset ✅ All tables recreated."
