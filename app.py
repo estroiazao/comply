@@ -6,44 +6,50 @@
 from flask import Flask, jsonify, request, send_from_directory, session, redirect
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-import sqlite3
+import psycopg2
+import psycopg2.extras
+import os
 
 app = Flask(__name__)
 app.secret_key = "comply-secret-key-change-this-later"
 CORS(app)
 
-DATABASE = "database.db"
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://postgres:Estroia2026@db.uxibzrkqukrdnrfeujdc.supabase.co:5432/postgres",
+)
 
 
 # ── DATABASE ─────────────────────────────────────────────────────────────────
 
 
 def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     return conn
 
 
 def init_feed_table(conn):
-    conn.execute("""
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS feed_posts (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            id          SERIAL PRIMARY KEY,
             user_id     INTEGER NOT NULL,
             score       INTEGER NOT NULL,
             country     TEXT,
             industry    TEXT,
             anonymous   INTEGER DEFAULT 0,
             likes       INTEGER DEFAULT 0,
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
 
 
 def init_accountant_tables(conn):
-    conn.execute("""
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS accountant_profiles (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            id               SERIAL PRIMARY KEY,
             user_id          INTEGER UNIQUE NOT NULL,
             display_name     TEXT NOT NULL,
             bio              TEXT,
@@ -56,37 +62,32 @@ def init_accountant_tables(conn):
             contact_email    TEXT,
             contact_whatsapp TEXT,
             verified         INTEGER DEFAULT 0,
-            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
-    conn.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS accountant_messages (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            id              SERIAL PRIMARY KEY,
             accountant_id   INTEGER NOT NULL,
             sender_id       INTEGER NOT NULL,
             receiver_id     INTEGER NOT NULL,
             message         TEXT NOT NULL,
             read            INTEGER DEFAULT 0,
-            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (accountant_id) REFERENCES accountant_profiles(id),
             FOREIGN KEY (sender_id)     REFERENCES users(id),
             FOREIGN KEY (receiver_id)   REFERENCES users(id)
         )
     """)
-    try:
-        conn.execute(
-            "ALTER TABLE users ADD COLUMN account_type TEXT DEFAULT 'business'"
-        )
-    except:
-        pass
 
 
 def init_db():
     conn = get_db()
-    conn.execute("""
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            id            SERIAL PRIMARY KEY,
             email         TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             business_name TEXT,
@@ -95,37 +96,27 @@ def init_db():
             industry      TEXT,
             employees     TEXT,
             onboarded     INTEGER DEFAULT 0,
+            monthly_revenue INTEGER DEFAULT 0,
+            account_type  TEXT DEFAULT 'business',
             created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    conn.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS deadlines (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            id          SERIAL PRIMARY KEY,
             user_id     INTEGER NOT NULL,
             title       TEXT NOT NULL,
             month       TEXT,
             day         TEXT,
             due_date    TEXT,
             category    TEXT,
-            status      TEXT DEFAULT "upcoming",
+            status      TEXT DEFAULT 'upcoming',
             description TEXT,
             penalty     TEXT,
             done        INTEGER DEFAULT 0,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
-    for col in [
-        "country TEXT",
-        "region TEXT",
-        "industry TEXT",
-        "employees TEXT",
-        "onboarded INTEGER DEFAULT 0",
-        "state TEXT",
-    ]:
-        try:
-            conn.execute(f"ALTER TABLE users ADD COLUMN {col}")
-        except:
-            pass
 
     # ── Create feed_posts table ──────────────────────────────────────────────
     init_feed_table(conn)
@@ -3148,9 +3139,9 @@ def home():
     if not logged_in():
         return redirect("/login")
     conn = get_db()
-    user = conn.execute(
-        "SELECT * FROM users WHERE id=?", (current_user_id(),)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id=%s", (current_user_id(),))
+    user = cur.fetchone()
     conn.close()
     if not user:
         session.clear()
@@ -3204,13 +3195,15 @@ def register():
 
     password_hash = generate_password_hash(password)
     conn = get_db()
+    cur = conn.cursor()
     try:
-        conn.execute(
-            "INSERT INTO users (email, password_hash, business_name) VALUES (?, ?, ?)",
+        cur.execute(
+            "INSERT INTO users (email, password_hash, business_name) VALUES (%s, %s, %s)",
             (email, password_hash, business_name),
         )
         conn.commit()
-        user = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+        cur.execute("SELECT * FROM users WHERE email=%s", (email,))
+        user = cur.fetchone()
         session["user_id"] = user["id"]
         session["user_email"] = user["email"]
         session["business_name"] = user["business_name"]
@@ -3227,7 +3220,9 @@ def login():
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
     conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE email=%s", (email,))
+    user = cur.fetchone()
     conn.close()
 
     if not user or not check_password_hash(user["password_hash"], password):
@@ -3250,18 +3245,16 @@ def me():
     if not logged_in():
         return jsonify({"error": "Not logged in"}), 401
     conn = get_db()
-    user = conn.execute(
-        "SELECT * FROM users WHERE id=?", (current_user_id(),)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id=%s", (current_user_id(),))
+    user = cur.fetchone()
     conn.close()
     return jsonify(
         {
             "id": current_user_id(),
             "email": session.get("user_email"),
             "business_name": session.get("business_name"),
-            "monthly_revenue": user["monthly_revenue"]
-            if user and "monthly_revenue" in user.keys()
-            else 5000,
+            "monthly_revenue": user["monthly_revenue"] if user else 5000,
         }
     )
 
@@ -3283,23 +3276,21 @@ def onboard():
     uid = current_user_id()
 
     conn = get_db()
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN monthly_revenue INTEGER DEFAULT 0")
-    except:
-        pass
+    # monthly_revenue already in schema
 
-    conn.execute(
-        "UPDATE users SET country=?, region=?, industry=?, employees=?, monthly_revenue=?, onboarded=1 WHERE id=?",
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET country=%s, region=%s, industry=%s, employees=%s, monthly_revenue=%s, onboarded=1 WHERE id=%s",
         (country, region, industry, employees, monthly_revenue, uid),
     )
-    conn.execute("DELETE FROM deadlines WHERE user_id=?", (uid,))
+    cur.execute("DELETE FROM deadlines WHERE user_id=%s", (uid,))
 
     for item in get_deadlines_for(country, region, industry, employees):
         title, month, day, due_date, category, status, description, penalty = item
-        conn.execute(
+        cur.execute(
             """
             INSERT INTO deadlines (user_id,title,month,day,due_date,category,status,description,penalty,done)
-            VALUES (?,?,?,?,?,?,?,?,?,0)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0)
         """,
             (uid, title, month, day, due_date, category, status, description, penalty),
         )
@@ -3317,10 +3308,12 @@ def get_deadlines():
     if not logged_in():
         return jsonify({"error": "Not logged in"}), 401
     conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM deadlines WHERE user_id=? ORDER BY due_date",
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM deadlines WHERE user_id=%s ORDER BY due_date",
         (current_user_id(),),
-    ).fetchall()
+    )
+    rows = cur.fetchall()
     conn.close()
     return jsonify([row_to_dict(r) for r in rows])
 
@@ -3330,20 +3323,23 @@ def toggle_done(did):
     if not logged_in():
         return jsonify({"error": "Not logged in"}), 401
     conn = get_db()
-    row = conn.execute(
-        "SELECT * FROM deadlines WHERE id=? AND user_id=?", (did, current_user_id())
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM deadlines WHERE id=%s AND user_id=%s", (did, current_user_id())
+    )
+    row = cur.fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "Not found"}), 404
     new_done = 0 if row["done"] else 1
     new_status = "done" if new_done else "upcoming"
-    conn.execute(
-        "UPDATE deadlines SET done=?, status=? WHERE id=? AND user_id=?",
+    cur.execute(
+        "UPDATE deadlines SET done=%s, status=%s WHERE id=%s AND user_id=%s",
         (new_done, new_status, did, current_user_id()),
     )
     conn.commit()
-    updated = conn.execute("SELECT * FROM deadlines WHERE id=?", (did,)).fetchone()
+    cur.execute("SELECT * FROM deadlines WHERE id=%s", (did,))
+    updated = cur.fetchone()
     conn.close()
     return jsonify(row_to_dict(updated))
 
@@ -3354,10 +3350,11 @@ def add_deadline():
         return jsonify({"error": "Not logged in"}), 401
     data = request.get_json()
     conn = get_db()
-    conn.execute(
+    cur = conn.cursor()
+    cur.execute(
         """
         INSERT INTO deadlines (user_id,title,month,day,due_date,category,status,description,penalty,done)
-        VALUES (?,?,?,?,?,?,"upcoming",?,?,0)
+        VALUES (%s,%s,%s,%s,%s,%s,'upcoming',%s,%s,0) RETURNING id
     """,
         (
             current_user_id(),
@@ -3370,9 +3367,10 @@ def add_deadline():
             data.get("penalty", ""),
         ),
     )
+    new_id = cur.fetchone()["id"]
     conn.commit()
-    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    new_row = conn.execute("SELECT * FROM deadlines WHERE id=?", (new_id,)).fetchone()
+    cur.execute("SELECT * FROM deadlines WHERE id=%s", (new_id,))
+    new_row = cur.fetchone()
     conn.close()
     return jsonify(row_to_dict(new_row)), 201
 
@@ -3382,8 +3380,9 @@ def delete_deadline(did):
     if not logged_in():
         return jsonify({"error": "Not logged in"}), 401
     conn = get_db()
-    conn.execute(
-        "DELETE FROM deadlines WHERE id=? AND user_id=?", (did, current_user_id())
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM deadlines WHERE id=%s AND user_id=%s", (did, current_user_id())
     )
     conn.commit()
     conn.close()
@@ -3396,7 +3395,8 @@ def delete_deadline(did):
 @app.route("/api/feed", methods=["GET"])
 def get_feed():
     conn = get_db()
-    rows = conn.execute("""
+    cur = conn.cursor()
+    cur.execute("""
         SELECT
             fp.id,
             fp.score,
@@ -3411,7 +3411,8 @@ def get_feed():
         JOIN users u ON fp.user_id = u.id
         ORDER BY fp.created_at DESC
         LIMIT 50
-    """).fetchall()
+    """)
+    rows = cur.fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -3426,29 +3427,32 @@ def post_to_feed():
     anonymous = 1 if data.get("anonymous", False) else 0
 
     conn = get_db()
-    user = conn.execute(
-        "SELECT country, industry FROM users WHERE id = ?", (session["user_id"],)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT country, industry FROM users WHERE id = %s", (session["user_id"],)
+    )
+    user = cur.fetchone()
 
     country = user["country"] if user else ""
     industry = user["industry"] if user else ""
 
-    existing = conn.execute(
+    cur.execute(
         """
         SELECT id FROM feed_posts
-        WHERE user_id = ? AND DATE(created_at) = DATE('now')
+        WHERE user_id = %s AND DATE(created_at) = CURRENT_DATE
         """,
         (session["user_id"],),
-    ).fetchone()
+    )
+    existing = cur.fetchone()
 
     if existing:
-        conn.execute(
-            "UPDATE feed_posts SET score = ?, anonymous = ? WHERE id = ?",
+        cur.execute(
+            "UPDATE feed_posts SET score = %s, anonymous = %s WHERE id = %s",
             (score, anonymous, existing["id"]),
         )
     else:
-        conn.execute(
-            "INSERT INTO feed_posts (user_id, score, country, industry, anonymous) VALUES (?, ?, ?, ?, ?)",
+        cur.execute(
+            "INSERT INTO feed_posts (user_id, score, country, industry, anonymous) VALUES (%s, %s, %s, %s, %s)",
             (session["user_id"], score, country, industry, anonymous),
         )
 
@@ -3460,11 +3464,11 @@ def post_to_feed():
 @app.route("/api/feed/<int:post_id>/like", methods=["PATCH"])
 def like_post(post_id):
     conn = get_db()
-    conn.execute("UPDATE feed_posts SET likes = likes + 1 WHERE id = ?", (post_id,))
+    cur = conn.cursor()
+    cur.execute("UPDATE feed_posts SET likes = likes + 1 WHERE id = %s", (post_id,))
     conn.commit()
-    row = conn.execute(
-        "SELECT likes FROM feed_posts WHERE id = ?", (post_id,)
-    ).fetchone()
+    cur.execute("SELECT likes FROM feed_posts WHERE id = %s", (post_id,))
+    row = cur.fetchone()
     conn.close()
     return jsonify({"likes": row["likes"] if row else 0})
 
@@ -3484,16 +3488,18 @@ def get_accountants():
     country = request.args.get("country", "")
     specialty = request.args.get("specialty", "")
     conn = get_db()
+    cur = conn.cursor()
     query = "SELECT ap.*, u.email FROM accountant_profiles ap JOIN users u ON ap.user_id = u.id WHERE 1=1"
     params = []
     if country:
-        query += " AND ap.country = ?"
+        query += " AND ap.country = %s"
         params.append(country)
     if specialty:
-        query += " AND ap.specialties LIKE ?"
+        query += " AND ap.specialties LIKE %s"
         params.append(f"%{specialty}%")
     query += " ORDER BY ap.verified DESC, ap.created_at DESC"
-    rows = conn.execute(query, params).fetchall()
+    cur.execute(query, params)
+    rows = cur.fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -3503,9 +3509,11 @@ def get_my_accountant_profile():
     if not logged_in():
         return jsonify({"error": "Unauthorized"}), 401
     conn = get_db()
-    row = conn.execute(
-        "SELECT * FROM accountant_profiles WHERE user_id=?", (current_user_id(),)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM accountant_profiles WHERE user_id=%s", (current_user_id(),)
+    )
+    row = cur.fetchone()
     conn.close()
     if not row:
         return jsonify({"exists": False})
@@ -3519,9 +3527,9 @@ def create_accountant_profile():
     data = request.get_json()
     uid = current_user_id()
     conn = get_db()
-    existing = conn.execute(
-        "SELECT id FROM accountant_profiles WHERE user_id=?", (uid,)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM accountant_profiles WHERE user_id=%s", (uid,))
+    existing = cur.fetchone()
     fields = (
         data.get("display_name", ""),
         data.get("bio", ""),
@@ -3535,31 +3543,30 @@ def create_accountant_profile():
         data.get("contact_whatsapp", ""),
     )
     if existing:
-        conn.execute(
+        cur.execute(
             """
             UPDATE accountant_profiles
-            SET display_name=?, bio=?, country=?, languages=?, specialties=?,
-                years_experience=?, certifications=?, price_month=?,
-                contact_email=?, contact_whatsapp=?
-            WHERE user_id=?
+            SET display_name=%s, bio=%s, country=%s, languages=%s, specialties=%s,
+                years_experience=%s, certifications=%s, price_month=%s,
+                contact_email=%s, contact_whatsapp=%s
+            WHERE user_id=%s
         """,
             (*fields, uid),
         )
     else:
-        conn.execute(
+        cur.execute(
             """
             INSERT INTO accountant_profiles
                 (user_id, display_name, bio, country, languages, specialties,
                  years_experience, certifications, price_month, contact_email, contact_whatsapp)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
             (uid, *fields),
         )
-        conn.execute("UPDATE users SET account_type='accountant' WHERE id=?", (uid,))
+        cur.execute("UPDATE users SET account_type='accountant' WHERE id=%s", (uid,))
     conn.commit()
-    profile = conn.execute(
-        "SELECT * FROM accountant_profiles WHERE user_id=?", (uid,)
-    ).fetchone()
+    cur.execute("SELECT * FROM accountant_profiles WHERE user_id=%s", (uid,))
+    profile = cur.fetchone()
     conn.close()
     return jsonify({"ok": True, "profile": dict(profile)})
 
@@ -3570,26 +3577,27 @@ def get_messages(profile_id):
         return jsonify({"error": "Unauthorized"}), 401
     uid = current_user_id()
     conn = get_db()
-    profile = conn.execute(
-        "SELECT user_id FROM accountant_profiles WHERE id=?", (profile_id,)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM accountant_profiles WHERE id=%s", (profile_id,))
+    profile = cur.fetchone()
     if not profile:
         conn.close()
         return jsonify({"error": "Not found"}), 404
     acc_uid = profile["user_id"]
-    rows = conn.execute(
+    cur.execute(
         """
         SELECT m.*, u.business_name as sender_name
         FROM accountant_messages m
         JOIN users u ON m.sender_id = u.id
-        WHERE m.accountant_id=?
-          AND ((m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?))
+        WHERE m.accountant_id=%s
+          AND ((m.sender_id=%s AND m.receiver_id=%s) OR (m.sender_id=%s AND m.receiver_id=%s))
         ORDER BY m.created_at ASC
     """,
         (profile_id, uid, acc_uid, acc_uid, uid),
-    ).fetchall()
-    conn.execute(
-        "UPDATE accountant_messages SET read=1 WHERE accountant_id=? AND receiver_id=? AND read=0",
+    )
+    rows = cur.fetchall()
+    cur.execute(
+        "UPDATE accountant_messages SET read=1 WHERE accountant_id=%s AND receiver_id=%s AND read=0",
         (profile_id, uid),
     )
     conn.commit()
@@ -3607,24 +3615,25 @@ def send_message(profile_id):
         return jsonify({"error": "Empty message"}), 400
     uid = current_user_id()
     conn = get_db()
-    profile = conn.execute(
-        "SELECT user_id FROM accountant_profiles WHERE id=?", (profile_id,)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM accountant_profiles WHERE id=%s", (profile_id,))
+    profile = cur.fetchone()
     if not profile:
         conn.close()
         return jsonify({"error": "Not found"}), 404
     acc_uid = profile["user_id"]
     receiver_id = int(data.get("receiver_id", acc_uid)) if uid == acc_uid else acc_uid
-    conn.execute(
-        "INSERT INTO accountant_messages (accountant_id, sender_id, receiver_id, message) VALUES (?,?,?,?)",
+    cur.execute(
+        "INSERT INTO accountant_messages (accountant_id, sender_id, receiver_id, message) VALUES (%s,%s,%s,%s) RETURNING id",
         (profile_id, uid, receiver_id, message),
     )
+    new_id = cur.fetchone()["id"]
     conn.commit()
-    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    new_row = conn.execute(
-        "SELECT m.*, u.business_name as sender_name FROM accountant_messages m JOIN users u ON m.sender_id=u.id WHERE m.id=?",
+    cur.execute(
+        "SELECT m.*, u.business_name as sender_name FROM accountant_messages m JOIN users u ON m.sender_id=u.id WHERE m.id=%s",
         (new_id,),
-    ).fetchone()
+    )
+    new_row = cur.fetchone()
     conn.close()
     return jsonify(dict(new_row)), 201
 
@@ -3635,26 +3644,27 @@ def get_inbox():
         return jsonify({"error": "Unauthorized"}), 401
     uid = current_user_id()
     conn = get_db()
-    profile = conn.execute(
-        "SELECT id FROM accountant_profiles WHERE user_id=?", (uid,)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM accountant_profiles WHERE user_id=%s", (uid,))
+    profile = cur.fetchone()
     if not profile:
         conn.close()
         return jsonify([])
-    rows = conn.execute(
+    cur.execute(
         """
         SELECT
             u.id as client_id, u.business_name, u.email,
             COUNT(m.id) as message_count,
-            SUM(CASE WHEN m.read=0 AND m.receiver_id=? THEN 1 ELSE 0 END) as unread,
+            SUM(CASE WHEN m.read=0 AND m.receiver_id=%s THEN 1 ELSE 0 END) as unread,
             MAX(m.created_at) as last_message_at
         FROM accountant_messages m
-        JOIN users u ON (CASE WHEN m.sender_id!=? THEN m.sender_id ELSE m.receiver_id END = u.id)
-        WHERE m.accountant_id=?
-        GROUP BY u.id
+        JOIN users u ON (CASE WHEN m.sender_id!=%s THEN m.sender_id ELSE m.receiver_id END = u.id)
+        WHERE m.accountant_id=%s
+        GROUP BY u.id, u.business_name, u.email
         ORDER BY last_message_at DESC
     """,
         (uid, uid, profile["id"]),
-    ).fetchall()
+    )
+    rows = cur.fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
