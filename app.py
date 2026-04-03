@@ -3427,7 +3427,8 @@ def like_post(post_id):
 
 
 # ── START ─────────────────────────────────────────────────────────────────────
+init_db()  # runs on startup whether gunicorn or direct
+
 if __name__ == "__main__":
-    init_db()
     print("COMPLY is ready!")
     app.run(debug=True)
