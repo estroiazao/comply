@@ -40,6 +40,48 @@ def init_feed_table(conn):
     """)
 
 
+def init_accountant_tables(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS accountant_profiles (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id          INTEGER UNIQUE NOT NULL,
+            display_name     TEXT NOT NULL,
+            bio              TEXT,
+            country          TEXT,
+            languages        TEXT,
+            specialties      TEXT,
+            years_experience INTEGER DEFAULT 0,
+            certifications   TEXT,
+            price_month      REAL DEFAULT 0,
+            contact_email    TEXT,
+            contact_whatsapp TEXT,
+            verified         INTEGER DEFAULT 0,
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS accountant_messages (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            accountant_id   INTEGER NOT NULL,
+            sender_id       INTEGER NOT NULL,
+            receiver_id     INTEGER NOT NULL,
+            message         TEXT NOT NULL,
+            read            INTEGER DEFAULT 0,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (accountant_id) REFERENCES accountant_profiles(id),
+            FOREIGN KEY (sender_id)     REFERENCES users(id),
+            FOREIGN KEY (receiver_id)   REFERENCES users(id)
+        )
+    """)
+    try:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN account_type TEXT DEFAULT 'business'"
+        )
+    except:
+        pass
+
+
 def init_db():
     conn = get_db()
     conn.execute("""
@@ -87,6 +129,7 @@ def init_db():
 
     # ── Create feed_posts table ──────────────────────────────────────────────
     init_feed_table(conn)
+    init_accountant_tables(conn)
 
     conn.commit()
     conn.close()
@@ -3427,8 +3470,191 @@ def like_post(post_id):
 
 
 # ── START ─────────────────────────────────────────────────────────────────────
-init_db()  # runs on startup whether gunicorn or direct
-
 if __name__ == "__main__":
+    init_db()
     print("COMPLY is ready!")
     app.run(debug=True)
+
+
+# ── ACCOUNTANT MARKETPLACE ───────────────────────────────────────────────────
+
+
+@app.route("/api/accountants", methods=["GET"])
+def get_accountants():
+    country = request.args.get("country", "")
+    specialty = request.args.get("specialty", "")
+    conn = get_db()
+    query = "SELECT ap.*, u.email FROM accountant_profiles ap JOIN users u ON ap.user_id = u.id WHERE 1=1"
+    params = []
+    if country:
+        query += " AND ap.country = ?"
+        params.append(country)
+    if specialty:
+        query += " AND ap.specialties LIKE ?"
+        params.append(f"%{specialty}%")
+    query += " ORDER BY ap.verified DESC, ap.created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/accountants/me", methods=["GET"])
+def get_my_accountant_profile():
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM accountant_profiles WHERE user_id=?", (current_user_id(),)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"exists": False})
+    return jsonify({"exists": True, **dict(row)})
+
+
+@app.route("/api/accountants/profile", methods=["POST"])
+def create_accountant_profile():
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json()
+    uid = current_user_id()
+    conn = get_db()
+    existing = conn.execute(
+        "SELECT id FROM accountant_profiles WHERE user_id=?", (uid,)
+    ).fetchone()
+    fields = (
+        data.get("display_name", ""),
+        data.get("bio", ""),
+        data.get("country", ""),
+        data.get("languages", ""),
+        data.get("specialties", ""),
+        int(data.get("years_experience", 0)),
+        data.get("certifications", ""),
+        float(data.get("price_month", 0)),
+        data.get("contact_email", ""),
+        data.get("contact_whatsapp", ""),
+    )
+    if existing:
+        conn.execute(
+            """
+            UPDATE accountant_profiles
+            SET display_name=?, bio=?, country=?, languages=?, specialties=?,
+                years_experience=?, certifications=?, price_month=?,
+                contact_email=?, contact_whatsapp=?
+            WHERE user_id=?
+        """,
+            (*fields, uid),
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO accountant_profiles
+                (user_id, display_name, bio, country, languages, specialties,
+                 years_experience, certifications, price_month, contact_email, contact_whatsapp)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """,
+            (uid, *fields),
+        )
+        conn.execute("UPDATE users SET account_type='accountant' WHERE id=?", (uid,))
+    conn.commit()
+    profile = conn.execute(
+        "SELECT * FROM accountant_profiles WHERE user_id=?", (uid,)
+    ).fetchone()
+    conn.close()
+    return jsonify({"ok": True, "profile": dict(profile)})
+
+
+@app.route("/api/accountants/<int:profile_id>/messages", methods=["GET"])
+def get_messages(profile_id):
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    conn = get_db()
+    profile = conn.execute(
+        "SELECT user_id FROM accountant_profiles WHERE id=?", (profile_id,)
+    ).fetchone()
+    if not profile:
+        conn.close()
+        return jsonify({"error": "Not found"}), 404
+    acc_uid = profile["user_id"]
+    rows = conn.execute(
+        """
+        SELECT m.*, u.business_name as sender_name
+        FROM accountant_messages m
+        JOIN users u ON m.sender_id = u.id
+        WHERE m.accountant_id=?
+          AND ((m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?))
+        ORDER BY m.created_at ASC
+    """,
+        (profile_id, uid, acc_uid, acc_uid, uid),
+    ).fetchall()
+    conn.execute(
+        "UPDATE accountant_messages SET read=1 WHERE accountant_id=? AND receiver_id=? AND read=0",
+        (profile_id, uid),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/accountants/<int:profile_id>/messages", methods=["POST"])
+def send_message(profile_id):
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json()
+    message = data.get("message", "").strip()
+    if not message:
+        return jsonify({"error": "Empty message"}), 400
+    uid = current_user_id()
+    conn = get_db()
+    profile = conn.execute(
+        "SELECT user_id FROM accountant_profiles WHERE id=?", (profile_id,)
+    ).fetchone()
+    if not profile:
+        conn.close()
+        return jsonify({"error": "Not found"}), 404
+    acc_uid = profile["user_id"]
+    receiver_id = int(data.get("receiver_id", acc_uid)) if uid == acc_uid else acc_uid
+    conn.execute(
+        "INSERT INTO accountant_messages (accountant_id, sender_id, receiver_id, message) VALUES (?,?,?,?)",
+        (profile_id, uid, receiver_id, message),
+    )
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    new_row = conn.execute(
+        "SELECT m.*, u.business_name as sender_name FROM accountant_messages m JOIN users u ON m.sender_id=u.id WHERE m.id=?",
+        (new_id,),
+    ).fetchone()
+    conn.close()
+    return jsonify(dict(new_row)), 201
+
+
+@app.route("/api/accountants/inbox", methods=["GET"])
+def get_inbox():
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    conn = get_db()
+    profile = conn.execute(
+        "SELECT id FROM accountant_profiles WHERE user_id=?", (uid,)
+    ).fetchone()
+    if not profile:
+        conn.close()
+        return jsonify([])
+    rows = conn.execute(
+        """
+        SELECT
+            u.id as client_id, u.business_name, u.email,
+            COUNT(m.id) as message_count,
+            SUM(CASE WHEN m.read=0 AND m.receiver_id=? THEN 1 ELSE 0 END) as unread,
+            MAX(m.created_at) as last_message_at
+        FROM accountant_messages m
+        JOIN users u ON (CASE WHEN m.sender_id!=? THEN m.sender_id ELSE m.receiver_id END = u.id)
+        WHERE m.accountant_id=?
+        GROUP BY u.id
+        ORDER BY last_message_at DESC
+    """,
+        (uid, uid, profile["id"]),
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])

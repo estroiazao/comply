@@ -326,7 +326,6 @@ export default function HomeScreen() {
 
   const initials = userName ? userName[0].toUpperCase() : '?';
   const CATS     = ['tax','license','payroll','insurance','filing'];
-  const NAV_TABS = ['deadlines','feed','add','ai'] as const;
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
@@ -362,7 +361,7 @@ export default function HomeScreen() {
 
         {/* TABS */}
         <View style={styles.tabBar}>
-          {NAV_TABS.map(t => (
+          {(['deadlines','feed','add','ai'] as const).map(t => (
             <TouchableOpacity key={t} style={[styles.tabBtn, tab===t&&styles.tabBtnActive]} onPress={()=>setTab(t)}>
               <Text style={styles.tabIcon}>{t==='deadlines'?'📋':t==='feed'?'🌍':t==='add'?'➕':'🤖'}</Text>
             </TouchableOpacity>
@@ -382,9 +381,14 @@ export default function HomeScreen() {
                     <Text style={[styles.scoreCardPct, {color:SCORE_COLOR(pct)}]}>{pct}%</Text>
                     <Text style={[styles.scoreCardStatus, {color:SCORE_COLOR(pct)}]}>{SCORE_LABEL(pct)}</Text>
                   </View>
-                  <TouchableOpacity style={styles.shareScoreBtn} onPress={()=>setShowShareModal(true)}>
-                    <Text style={styles.shareScoreBtnText}>Share to Feed 🌍</Text>
-                  </TouchableOpacity>
+                  <View style={styles.scoreCardRight}>
+                    <TouchableOpacity style={styles.shareScoreBtn} onPress={()=>setShowShareModal(true)}>
+                      <Text style={styles.shareScoreBtnText}>Share 🌍</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.expertBtn} onPress={()=>router.push('/accountants')}>
+                      <Text style={styles.expertBtnText}>Find Expert 👔</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <View style={styles.progressWrap}>
@@ -429,7 +433,6 @@ export default function HomeScreen() {
                 <Text style={styles.feedShareBtnText}>Share mine</Text>
               </TouchableOpacity>
             </View>
-
             {feedLoading && feedPosts.length===0 ? (
               <View style={styles.center}><ActivityIndicator color={C.ink} size="large" /></View>
             ) : (
@@ -542,7 +545,7 @@ export default function HomeScreen() {
 
         {/* BOTTOM NAV */}
         <View style={styles.bottomNav}>
-          {NAV_TABS.map(t=>(
+          {(['deadlines','feed','add','ai'] as const).map(t=>(
             <TouchableOpacity key={t} style={styles.navItem} onPress={()=>setTab(t)}>
               <Text style={styles.navIcon}>{t==='deadlines'?'📋':t==='feed'?'🌍':t==='add'?'➕':'🤖'}</Text>
               <Text style={[styles.navLabel,tab===t&&styles.navLabelActive]}>
@@ -550,6 +553,10 @@ export default function HomeScreen() {
               </Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity style={styles.navItem} onPress={()=>router.push('/accountants')}>
+            <Text style={styles.navIcon}>👔</Text>
+            <Text style={styles.navLabel}>Experts</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── SHARE SCORE MODAL ── */}
@@ -596,6 +603,10 @@ export default function HomeScreen() {
               <TouchableOpacity style={styles.menuItem} onPress={()=>{setShowMenu(false);router.push('/onboard');}}>
                 <Text style={styles.menuItemIcon}>⚙️</Text>
                 <Text style={styles.menuItemText}>Change my profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={()=>{setShowMenu(false);router.push('/accountants');}}>
+                <Text style={styles.menuItemIcon}>👔</Text>
+                <Text style={styles.menuItemText}>Find an Accountant</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={testNotification}>
                 <Text style={styles.menuItemIcon}>🔔</Text>
@@ -645,6 +656,11 @@ export default function HomeScreen() {
                           ⓘ Estimates only. Actual penalties vary by jurisdiction and circumstances. Consult a qualified accountant or tax advisor for advice specific to your situation.
                         </Text>
                       </View>
+                    )}
+                    {!selected.done && (
+                      <TouchableOpacity style={styles.findExpertBtn} onPress={()=>{ setSelected(null); router.push('/accountants'); }}>
+                        <Text style={styles.findExpertBtnText}>👔 Need help? Find an accountant</Text>
+                      </TouchableOpacity>
                     )}
                     <TouchableOpacity style={styles.btn} onPress={()=>toggle(selected.id)}>
                       <Text style={styles.btnText}>{selected.done?'Mark as Not Done':'✔ Mark as Done — Stop the fine'}</Text>
@@ -738,8 +754,11 @@ const styles = StyleSheet.create({
   scoreCardLabel:      { fontSize:10, color:C.muted, textTransform:'uppercase', letterSpacing:1, marginBottom:2 },
   scoreCardPct:        { fontSize:32, fontWeight:'900' },
   scoreCardStatus:     { fontSize:11, fontWeight:'600', marginTop:2 },
-  shareScoreBtn:       { backgroundColor:C.ink, borderRadius:8, paddingHorizontal:14, paddingVertical:10 },
+  scoreCardRight:      { gap:8, alignItems:'flex-end' },
+  shareScoreBtn:       { backgroundColor:C.ink, borderRadius:8, paddingHorizontal:12, paddingVertical:8 },
   shareScoreBtnText:   { color:'#fff', fontSize:12, fontWeight:'600' },
+  expertBtn:           { backgroundColor:C.gold, borderRadius:8, paddingHorizontal:12, paddingVertical:8 },
+  expertBtnText:       { color:C.ink, fontSize:12, fontWeight:'600' },
   progressWrap:        { marginBottom:14 },
   progressLabels:      { flexDirection:'row', justifyContent:'space-between', marginBottom:4 },
   progressLabel:       { fontSize:11, color:C.muted },
@@ -790,13 +809,8 @@ const styles = StyleSheet.create({
   likeIcon:            { fontSize:18 },
   likeCount:           { fontSize:10, color:C.muted, marginTop:2 },
   likeCountActive:     { color:C.gold, fontWeight:'700' },
-  sharePreview:        { borderWidth:2, borderRadius:12, padding:20, alignItems:'center', marginVertical:16 },
-  sharePreviewPct:     { fontSize:40, fontWeight:'900' },
-  sharePreviewStatus:  { fontSize:14, fontWeight:'600', marginTop:4 },
-  sharePreviewName:    { fontSize:12, color:C.muted, marginTop:6 },
-  anonRow:             { flexDirection:'row', justifyContent:'space-between', alignItems:'center', backgroundColor:C.bg, borderRadius:10, padding:14, marginBottom:16 },
-  anonLabel:           { fontSize:14, color:C.ink, fontWeight:'500' },
-  anonSub:             { fontSize:11, color:C.muted, marginTop:2 },
+  findExpertBtn:       { backgroundColor:'#fff8ee', borderWidth:1.5, borderColor:C.gold, borderRadius:8, padding:12, alignItems:'center', marginBottom:12 },
+  findExpertBtnText:   { fontSize:13, color:'#7a5500', fontWeight:'600' },
   formCard:            { backgroundColor:C.surface, borderWidth:1.5, borderColor:C.ruled, borderRadius:12, padding:20 },
   formTitle:           { fontSize:20, fontWeight:'700', color:C.ink, marginBottom:16 },
   label:               { fontSize:10, color:C.muted, textTransform:'uppercase', letterSpacing:1.5, marginBottom:6 },
@@ -807,6 +821,13 @@ const styles = StyleSheet.create({
   catText:             { fontSize:12, color:C.muted, textTransform:'uppercase' },
   catTextSelected:     { color:'#fff' },
   feedback:            { fontSize:13, color:C.red, textAlign:'center', marginBottom:10 },
+  sharePreview:        { borderWidth:2, borderRadius:12, padding:20, alignItems:'center', marginVertical:16 },
+  sharePreviewPct:     { fontSize:40, fontWeight:'900' },
+  sharePreviewStatus:  { fontSize:14, fontWeight:'600', marginTop:4 },
+  sharePreviewName:    { fontSize:12, color:C.muted, marginTop:6 },
+  anonRow:             { flexDirection:'row', justifyContent:'space-between', alignItems:'center', backgroundColor:C.bg, borderRadius:10, padding:14, marginBottom:16 },
+  anonLabel:           { fontSize:14, color:C.ink, fontWeight:'500' },
+  anonSub:             { fontSize:11, color:C.muted, marginTop:2 },
   aiWrap:              { flex:1, backgroundColor:C.ink, padding:16, paddingBottom:0 },
   aiHeader:            { flexDirection:'row', alignItems:'center', gap:10, paddingBottom:12, borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.08)', marginBottom:12 },
   aiIcon:              { width:36, height:36, backgroundColor:'#8a6a00', borderRadius:8, alignItems:'center', justifyContent:'center' },
