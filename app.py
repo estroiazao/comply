@@ -9,6 +9,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import psycopg2
 import psycopg2.extras
 import os
+import requests
+import uuid
+import base64
 
 app = Flask(__name__)
 app.secret_key = "comply-secret-key-change-this-later"
@@ -18,6 +21,47 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://postgres:ZWHHdeUmIDWRoaSiOiAsXJHRrMhxFjfs@junction.proxy.rlwy.net:53789/railway",
 )
+
+SUPABASE_URL = "https://uxibzrkqukrdnrfeujdc.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4aWJ6cmtxdWtyZG5yZmV1amRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTI1NTY4NCwiZXhwIjoyMDkwODMxNjg0fQ.UV-lG3UWRtKA9W-y9gyxAFkJzWmWTdK8LZ9ONOS4-eM"
+SUPABASE_BUCKET = "comply-docs"
+
+
+def supabase_upload(file_bytes: bytes, path: str, content_type: str) -> str:
+    """Upload file to Supabase Storage and return public URL."""
+    url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{path}"
+    headers = {
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": content_type,
+        "x-upsert": "true",
+    }
+    res = requests.post(url, headers=headers, data=file_bytes)
+    if res.status_code not in (200, 201):
+        raise Exception(f"Upload failed: {res.text}")
+    return f"{SUPABASE_URL}/storage/v1/object/authenticated/{SUPABASE_BUCKET}/{path}"
+
+
+def supabase_delete(path: str):
+    """Delete file from Supabase Storage."""
+    url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{path}"
+    headers = {"Authorization": f"Bearer {SUPABASE_KEY}"}
+    requests.delete(url, headers=headers)
+
+
+def supabase_signed_url(path: str, expires_in: int = 3600) -> str:
+    """Get a signed URL for private file access."""
+    url = f"{SUPABASE_URL}/storage/v1/object/sign/{SUPABASE_BUCKET}/{path}"
+    headers = {
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+    res = requests.post(url, headers=headers, json={"expiresIn": expires_in})
+    if res.status_code == 200:
+        signed = res.json().get("signedURL", "")
+        return (
+            f"{SUPABASE_URL}/storage/v1{signed}" if signed.startswith("/") else signed
+        )
+    return ""
 
 
 # ── DATABASE ─────────────────────────────────────────────────────────────────
@@ -40,6 +84,24 @@ def init_feed_table(conn):
             anonymous   INTEGER DEFAULT 0,
             likes       INTEGER DEFAULT 0,
             created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+
+def init_documents_table(conn):
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS documents (
+            id           SERIAL PRIMARY KEY,
+            user_id      INTEGER NOT NULL,
+            deadline_id  INTEGER,
+            category     TEXT,
+            name         TEXT NOT NULL,
+            file_path    TEXT NOT NULL,
+            file_type    TEXT,
+            file_size    INTEGER,
+            uploaded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
@@ -121,6 +183,7 @@ def init_db():
     # ── Create feed_posts table ──────────────────────────────────────────────
     init_feed_table(conn)
     init_accountant_tables(conn)
+    init_documents_table(conn)
 
     conn.commit()
     conn.close()
@@ -3680,3 +3743,127 @@ init_db()  # runs on startup for both gunicorn and direct
 if __name__ == "__main__":
     print("COMPLY is ready!")
     app.run(debug=True)
+
+
+# ── DOCUMENTS ─────────────────────────────────────────────────────────────────
+
+
+@app.route("/api/documents", methods=["GET"])
+def get_documents():
+    """Get all documents for the current user, optionally filtered."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    deadline_id = request.args.get("deadline_id")
+    category = request.args.get("category")
+    conn = get_db()
+    cur = conn.cursor()
+    query = "SELECT * FROM documents WHERE user_id = %s"
+    params = [uid]
+    if deadline_id:
+        query += " AND deadline_id = %s"
+        params.append(int(deadline_id))
+    if category:
+        query += " AND category = %s"
+        params.append(category)
+    query += " ORDER BY uploaded_at DESC"
+    cur.execute(query, params)
+    docs = cur.fetchall()
+    conn.close()
+
+    # Generate signed URLs for each doc
+    result = []
+    for doc in docs:
+        d = dict(doc)
+        d["signed_url"] = supabase_signed_url(doc["file_path"])
+        result.append(d)
+    return jsonify(result)
+
+
+@app.route("/api/documents/upload", methods=["POST"])
+def upload_document():
+    """Upload a document to Supabase Storage."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    uid = current_user_id()
+    deadline_id = request.form.get("deadline_id")
+    category = request.form.get("category", "general")
+    file = request.files.get("file")
+
+    if not file:
+        return jsonify({"error": "No file provided"}), 400
+
+    filename = file.filename or "document"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    unique_name = f"{uid}/{uuid.uuid4()}.{ext}"
+    file_bytes = file.read()
+    content_type = file.content_type or "application/octet-stream"
+    file_size = len(file_bytes)
+
+    try:
+        supabase_upload(file_bytes, unique_name, content_type)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO documents (user_id, deadline_id, category, name, file_path, file_type, file_size)
+        VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+    """,
+        (
+            uid,
+            deadline_id or None,
+            category,
+            filename,
+            unique_name,
+            content_type,
+            file_size,
+        ),
+    )
+    new_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.execute("SELECT * FROM documents WHERE id = %s", (new_id,))
+    doc = dict(cur.fetchone())
+    conn.close()
+
+    doc["signed_url"] = supabase_signed_url(unique_name)
+    return jsonify(doc), 201
+
+
+@app.route("/api/documents/<int:doc_id>", methods=["DELETE"])
+def delete_document(doc_id):
+    """Delete a document."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM documents WHERE id = %s AND user_id = %s", (doc_id, uid))
+    doc = cur.fetchone()
+    if not doc:
+        conn.close()
+        return jsonify({"error": "Not found"}), 404
+    supabase_delete(doc["file_path"])
+    cur.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/documents/<int:doc_id>/url", methods=["GET"])
+def get_document_url(doc_id):
+    """Get a fresh signed URL for a document."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM documents WHERE id = %s AND user_id = %s", (doc_id, uid))
+    doc = cur.fetchone()
+    conn.close()
+    if not doc:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify({"url": supabase_signed_url(doc["file_path"])})

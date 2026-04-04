@@ -7,6 +7,7 @@ export default function RootLayout() {
       <Stack.Screen name="register" />
       <Stack.Screen name="onboard" />
       <Stack.Screen name="accountants" />
+      <Stack.Screen name="documents" />
     </Stack>
   );
 }

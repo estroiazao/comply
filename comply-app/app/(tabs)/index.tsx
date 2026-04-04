@@ -553,6 +553,10 @@ export default function HomeScreen() {
               </Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity style={styles.navItem} onPress={()=>router.push('/documents')}>
+            <Text style={styles.navIcon}>📁</Text>
+            <Text style={styles.navLabel}>Docs</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.navItem} onPress={()=>router.push('/accountants')}>
             <Text style={styles.navIcon}>👔</Text>
             <Text style={styles.navLabel}>Experts</Text>
