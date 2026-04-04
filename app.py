@@ -3195,11 +3195,12 @@ def register():
 
     password_hash = generate_password_hash(password)
     conn = get_db()
+    account_type = data.get("account_type", "business")
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO users (email, password_hash, business_name) VALUES (%s, %s, %s)",
-            (email, password_hash, business_name),
+            "INSERT INTO users (email, password_hash, business_name, account_type) VALUES (%s, %s, %s, %s)",
+            (email, password_hash, business_name, account_type),
         )
         conn.commit()
         cur.execute("SELECT * FROM users WHERE email=%s", (email,))
@@ -3207,8 +3208,10 @@ def register():
         session["user_id"] = user["id"]
         session["user_email"] = user["email"]
         session["business_name"] = user["business_name"]
+        session["account_type"] = account_type
         conn.close()
-        return jsonify({"success": True, "redirect": "/onboard"})
+        redirect_to = "/accountants" if account_type == "accountant" else "/onboard"
+        return jsonify({"success": True, "redirect": redirect_to})
     except:
         conn.close()
         return jsonify({"error": "An account with that email already exists."}), 400
@@ -3255,6 +3258,7 @@ def me():
             "email": session.get("user_email"),
             "business_name": session.get("business_name"),
             "monthly_revenue": user["monthly_revenue"] if user else 5000,
+            "account_type": user["account_type"] if user else "business",
         }
     )
 
