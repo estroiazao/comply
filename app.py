@@ -3668,3 +3668,11 @@ def get_inbox():
     rows = cur.fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
+
+
+# ── START ─────────────────────────────────────────────────────────────────────
+init_db()  # runs on startup for both gunicorn and direct
+
+if __name__ == "__main__":
+    print("COMPLY is ready!")
+    app.run(debug=True)
