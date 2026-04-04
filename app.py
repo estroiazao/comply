@@ -16,7 +16,7 @@ CORS(app)
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://postgres:Estroia2026@db.uxibzrkqukrdnrfeujdc.supabase.co:5432/postgres",
+    "postgresql://postgres:ZWHHdeUmIDWRoaSiOiAsXJHRrMhxFjfs@junction.proxy.rlwy.net:53789/railway",
 )
 
 
