@@ -4164,7 +4164,7 @@ def request_document(client_id):
     return jsonify({"ok": True})
 
 
-@app.route("/admin/migrate2")
+@app.route("/runmigration")
 def migrate2():
     conn = get_db()
     cur = conn.cursor()
