@@ -9,9 +9,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import psycopg2
 import psycopg2.extras
 import os
-import requests
 import uuid
-import base64
+import urllib.request
+import urllib.error
+import json as _json
 
 app = Flask(__name__)
 app.secret_key = "comply-secret-key-change-this-later"
@@ -28,40 +29,50 @@ SUPABASE_BUCKET = "comply-docs"
 
 
 def supabase_upload(file_bytes: bytes, path: str, content_type: str) -> str:
-    """Upload file to Supabase Storage and return public URL."""
+    """Upload file to Supabase Storage and return URL."""
     url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{path}"
-    headers = {
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": content_type,
-        "x-upsert": "true",
-    }
-    res = requests.post(url, headers=headers, data=file_bytes)
-    if res.status_code not in (200, 201):
-        raise Exception(f"Upload failed: {res.text}")
+    req = urllib.request.Request(url, data=file_bytes, method="POST")
+    req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+    req.add_header("Content-Type", content_type)
+    req.add_header("x-upsert", "true")
+    try:
+        with urllib.request.urlopen(req) as res:
+            if res.status not in (200, 201):
+                raise Exception(f"Upload failed: {res.status}")
+    except urllib.error.HTTPError as e:
+        raise Exception(f"Upload failed: {e.code} {e.reason}")
     return f"{SUPABASE_URL}/storage/v1/object/authenticated/{SUPABASE_BUCKET}/{path}"
 
 
 def supabase_delete(path: str):
     """Delete file from Supabase Storage."""
     url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{path}"
-    headers = {"Authorization": f"Bearer {SUPABASE_KEY}"}
-    requests.delete(url, headers=headers)
+    req = urllib.request.Request(url, method="DELETE")
+    req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+    try:
+        urllib.request.urlopen(req)
+    except:
+        pass
 
 
 def supabase_signed_url(path: str, expires_in: int = 3600) -> str:
     """Get a signed URL for private file access."""
     url = f"{SUPABASE_URL}/storage/v1/object/sign/{SUPABASE_BUCKET}/{path}"
-    headers = {
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-    }
-    res = requests.post(url, headers=headers, json={"expiresIn": expires_in})
-    if res.status_code == 200:
-        signed = res.json().get("signedURL", "")
-        return (
-            f"{SUPABASE_URL}/storage/v1{signed}" if signed.startswith("/") else signed
-        )
-    return ""
+    body = _json.dumps({"expiresIn": expires_in}).encode()
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req) as res:
+            data = _json.loads(res.read())
+            signed = data.get("signedURL", "")
+            return (
+                f"{SUPABASE_URL}/storage/v1{signed}"
+                if signed.startswith("/")
+                else signed
+            )
+    except:
+        return ""
 
 
 # ── DATABASE ─────────────────────────────────────────────────────────────────
