@@ -104,16 +104,32 @@ def init_documents_table(conn):
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS documents (
-            id           SERIAL PRIMARY KEY,
-            user_id      INTEGER NOT NULL,
-            deadline_id  INTEGER,
-            category     TEXT,
-            name         TEXT NOT NULL,
-            file_path    TEXT NOT NULL,
-            file_type    TEXT,
-            file_size    INTEGER,
-            uploaded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            id             SERIAL PRIMARY KEY,
+            user_id        INTEGER NOT NULL,
+            uploaded_by    INTEGER,
+            deadline_id    INTEGER,
+            category       TEXT,
+            name           TEXT NOT NULL,
+            file_path      TEXT NOT NULL,
+            file_type      TEXT,
+            file_size      INTEGER,
+            requested      INTEGER DEFAULT 0,
+            request_note   TEXT,
+            uploaded_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS accountant_clients (
+            id              SERIAL PRIMARY KEY,
+            accountant_id   INTEGER NOT NULL,
+            client_id       INTEGER NOT NULL,
+            invite_code     TEXT UNIQUE,
+            status          TEXT DEFAULT 'pending',
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(accountant_id, client_id),
+            FOREIGN KEY (accountant_id) REFERENCES accountant_profiles(id),
+            FOREIGN KEY (client_id)     REFERENCES users(id)
         )
     """)
 
@@ -3878,3 +3894,299 @@ def get_document_url(doc_id):
     if not doc:
         return jsonify({"error": "Not found"}), 404
     return jsonify({"url": supabase_signed_url(doc["file_path"])})
+
+
+# ── ACCOUNTANT CLIENT MANAGEMENT ─────────────────────────────────────────────
+
+
+@app.route("/api/accountants/invite", methods=["POST"])
+def generate_invite():
+    """Accountant generates an invite code for a client."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM accountant_profiles WHERE user_id=%s", (uid,))
+    profile = cur.fetchone()
+    if not profile:
+        conn.close()
+        return jsonify({"error": "No accountant profile found"}), 404
+    code = str(uuid.uuid4())[:8].upper()
+    cur.execute(
+        """
+        INSERT INTO accountant_clients (accountant_id, invite_code, client_id, status)
+        VALUES (%s, %s, 0, 'invite')
+        ON CONFLICT DO NOTHING
+    """,
+        (profile["id"], code),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"code": code})
+
+
+@app.route("/api/accountants/connect", methods=["POST"])
+def connect_to_accountant():
+    """Business enters an invite code to connect to an accountant."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json()
+    code = data.get("code", "").strip().upper()
+    uid = current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM accountant_clients WHERE invite_code=%s", (code,))
+    invite = cur.fetchone()
+    if not invite:
+        conn.close()
+        return jsonify({"error": "Invalid invite code"}), 404
+    # Update the invite row with client_id
+    cur.execute(
+        """
+        UPDATE accountant_clients SET client_id=%s, status='active'
+        WHERE invite_code=%s
+    """,
+        (uid, code),
+    )
+    conn.commit()
+    # Return accountant profile info
+    cur.execute(
+        """
+        SELECT ap.*, u.email FROM accountant_profiles ap
+        JOIN users u ON ap.user_id = u.id
+        WHERE ap.id = %s
+    """,
+        (invite["accountant_id"],),
+    )
+    profile = cur.fetchone()
+    conn.close()
+    return jsonify({"ok": True, "accountant": dict(profile) if profile else {}})
+
+
+@app.route("/api/accountants/my-accountant", methods=["GET"])
+def get_my_accountant():
+    """Get the accountant connected to the current business."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT ap.*, u.email, ac.status
+        FROM accountant_clients ac
+        JOIN accountant_profiles ap ON ac.accountant_id = ap.id
+        JOIN users u ON ap.user_id = u.id
+        WHERE ac.client_id = %s AND ac.status = 'active'
+        LIMIT 1
+    """,
+        (uid,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"connected": False})
+    return jsonify({"connected": True, **dict(row)})
+
+
+@app.route("/api/accountants/clients", methods=["GET"])
+def get_my_clients():
+    """Get all clients connected to the current accountant."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM accountant_profiles WHERE user_id=%s", (uid,))
+    profile = cur.fetchone()
+    if not profile:
+        conn.close()
+        return jsonify([])
+    cur.execute(
+        """
+        SELECT
+            u.id, u.business_name, u.email, u.country, u.industry,
+            ac.status, ac.created_at,
+            (SELECT COUNT(*) FROM deadlines d WHERE d.user_id=u.id AND d.done=0) as pending_deadlines,
+            (SELECT COUNT(*) FROM deadlines d WHERE d.user_id=u.id AND d.status='urgent' AND d.done=0) as urgent_deadlines,
+            (SELECT COUNT(*) FROM deadlines d WHERE d.user_id=u.id) as total_deadlines,
+            (SELECT COUNT(*) FROM deadlines d WHERE d.user_id=u.id AND d.done=1) as done_deadlines,
+            (SELECT COUNT(*) FROM documents doc WHERE doc.user_id=u.id) as document_count
+        FROM accountant_clients ac
+        JOIN users u ON ac.client_id = u.id
+        WHERE ac.accountant_id = %s AND ac.status = 'active' AND ac.client_id != 0
+        ORDER BY urgent_deadlines DESC, u.business_name
+    """,
+        (profile["id"],),
+    )
+    clients = cur.fetchall()
+    conn.close()
+    result = []
+    for c in clients:
+        d = dict(c)
+        total = d["total_deadlines"] or 0
+        done = d["done_deadlines"] or 0
+        d["compliance_score"] = round((done / total) * 100) if total > 0 else 0
+        result.append(d)
+    return jsonify(result)
+
+
+@app.route("/api/accountants/clients/<int:client_id>/documents", methods=["GET"])
+def get_client_documents(client_id):
+    """Accountant views a client's documents."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    # Verify accountant has access to this client
+    cur.execute("SELECT id FROM accountant_profiles WHERE user_id=%s", (uid,))
+    profile = cur.fetchone()
+    if not profile:
+        conn.close()
+        return jsonify({"error": "Not an accountant"}), 403
+    cur.execute(
+        """
+        SELECT 1 FROM accountant_clients
+        WHERE accountant_id=%s AND client_id=%s AND status='active'
+    """,
+        (profile["id"], client_id),
+    )
+    if not cur.fetchone():
+        conn.close()
+        return jsonify({"error": "Client not connected"}), 403
+    cur.execute(
+        "SELECT * FROM documents WHERE user_id=%s ORDER BY uploaded_at DESC",
+        (client_id,),
+    )
+    docs = cur.fetchall()
+    conn.close()
+    result = []
+    for doc in docs:
+        d = dict(doc)
+        d["signed_url"] = supabase_signed_url(doc["file_path"])
+        result.append(d)
+    return jsonify(result)
+
+
+@app.route("/api/accountants/clients/<int:client_id>/upload", methods=["POST"])
+def accountant_upload_for_client(client_id):
+    """Accountant uploads a document on behalf of a client."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM accountant_profiles WHERE user_id=%s", (uid,))
+    profile = cur.fetchone()
+    if not profile:
+        conn.close()
+        return jsonify({"error": "Not an accountant"}), 403
+    cur.execute(
+        """
+        SELECT 1 FROM accountant_clients
+        WHERE accountant_id=%s AND client_id=%s AND status='active'
+    """,
+        (profile["id"], client_id),
+    )
+    if not cur.fetchone():
+        conn.close()
+        return jsonify({"error": "Client not connected"}), 403
+
+    category = request.form.get("category", "general")
+    file = request.files.get("file")
+    if not file:
+        conn.close()
+        return jsonify({"error": "No file"}), 400
+
+    filename = file.filename or "document"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    unique_name = f"{client_id}/{uuid.uuid4()}.{ext}"
+    file_bytes = file.read()
+    content_type = file.content_type or "application/octet-stream"
+
+    try:
+        supabase_upload(file_bytes, unique_name, content_type)
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 500
+
+    cur.execute(
+        """
+        INSERT INTO documents (user_id, uploaded_by, category, name, file_path, file_type, file_size)
+        VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+    """,
+        (
+            client_id,
+            uid,
+            category,
+            filename,
+            unique_name,
+            content_type,
+            len(file_bytes),
+        ),
+    )
+    new_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.execute("SELECT * FROM documents WHERE id=%s", (new_id,))
+    doc = dict(cur.fetchone())
+    conn.close()
+    doc["signed_url"] = supabase_signed_url(unique_name)
+    return jsonify(doc), 201
+
+
+@app.route("/api/accountants/clients/<int:client_id>/request-doc", methods=["POST"])
+def request_document(client_id):
+    """Accountant requests a specific document from a client."""
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = current_user_id()
+    data = request.get_json()
+    note = data.get("note", "")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM accountant_profiles WHERE user_id=%s", (uid,))
+    profile = cur.fetchone()
+    if not profile:
+        conn.close()
+        return jsonify({"error": "Not an accountant"}), 403
+    # Create a placeholder document request
+    cur.execute(
+        """
+        INSERT INTO documents (user_id, uploaded_by, category, name, file_path, file_type, requested, request_note)
+        VALUES (%s, %s, 'general', %s, '', 'request', 1, %s) RETURNING id
+    """,
+        (client_id, uid, f"📋 {note}", note),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/migrate2")
+def migrate2():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS accountant_clients (
+            id              SERIAL PRIMARY KEY,
+            accountant_id   INTEGER NOT NULL,
+            client_id       INTEGER NOT NULL,
+            invite_code     TEXT UNIQUE,
+            status          TEXT DEFAULT 'pending',
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(accountant_id, client_id),
+            FOREIGN KEY (accountant_id) REFERENCES accountant_profiles(id),
+            FOREIGN KEY (client_id)     REFERENCES users(id)
+        )
+    """)
+    cur.execute("""
+        ALTER TABLE documents 
+        ADD COLUMN IF NOT EXISTS uploaded_by INTEGER,
+        ADD COLUMN IF NOT EXISTS requested INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS request_note TEXT
+    """)
+    conn.commit()
+    conn.close()
+    return "Migration done ✅"
