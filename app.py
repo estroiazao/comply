@@ -212,6 +212,28 @@ def init_db():
     init_accountant_tables(conn)
     init_documents_table(conn)
 
+    # ── Safe migrations ──────────────────────────────────────────────────────
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS accountant_clients (
+            id            SERIAL PRIMARY KEY,
+            accountant_id INTEGER NOT NULL,
+            client_id     INTEGER NOT NULL DEFAULT 0,
+            invite_code   TEXT UNIQUE,
+            status        TEXT DEFAULT 'pending',
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    for col_sql in [
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS uploaded_by INTEGER",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS requested INTEGER DEFAULT 0",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS request_note TEXT",
+    ]:
+        try:
+            cur.execute(col_sql)
+        except:
+            pass
+
     conn.commit()
     conn.close()
 
@@ -4162,31 +4184,3 @@ def request_document(client_id):
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
-
-
-@app.route("/runmigration")
-def migrate2():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS accountant_clients (
-            id              SERIAL PRIMARY KEY,
-            accountant_id   INTEGER NOT NULL,
-            client_id       INTEGER NOT NULL,
-            invite_code     TEXT UNIQUE,
-            status          TEXT DEFAULT 'pending',
-            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(accountant_id, client_id),
-            FOREIGN KEY (accountant_id) REFERENCES accountant_profiles(id),
-            FOREIGN KEY (client_id)     REFERENCES users(id)
-        )
-    """)
-    cur.execute("""
-        ALTER TABLE documents 
-        ADD COLUMN IF NOT EXISTS uploaded_by INTEGER,
-        ADD COLUMN IF NOT EXISTS requested INTEGER DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS request_note TEXT
-    """)
-    conn.commit()
-    conn.close()
-    return "Migration done ✅"
