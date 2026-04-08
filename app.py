@@ -3935,32 +3935,17 @@ def generate_invite():
         conn.close()
         return jsonify({"error": "No accountant profile found"}), 404
     code = str(uuid.uuid4())[:8].upper()
-   cur.execute("""
-    INSERT INTO accountant_clients (accountant_id, invite_code, client_id, status)
-    VALUES (%s, %s, NULL, 'invite')
-    ON CONFLICT DO NOTHING
-""", (profile["id"], code),
+    cur.execute(
+        """
+        INSERT INTO accountant_clients (accountant_id, invite_code, client_id, status)
+        VALUES (%s, %s, NULL, 'invite')
+        ON CONFLICT DO NOTHING
+    """,
+        (profile["id"], code),
     )
     conn.commit()
     conn.close()
     return jsonify({"code": code})
-
-
-@app.route("/api/accountants/connect", methods=["POST"])
-def connect_to_accountant():
-    """Business enters an invite code to connect to an accountant."""
-    if not logged_in():
-        return jsonify({"error": "Unauthorized"}), 401
-    data = request.get_json()
-    code = data.get("code", "").strip().upper()
-    uid = current_user_id()
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM accountant_clients WHERE invite_code=%s", (code,))
-    invite = cur.fetchone()
-    if not invite:
-        conn.close()
-        return jsonify({"error": "Invalid invite code"}), 404
     # Update the invite row with client_id
     cur.execute(
         """
