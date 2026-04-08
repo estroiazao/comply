@@ -3935,13 +3935,11 @@ def generate_invite():
         conn.close()
         return jsonify({"error": "No accountant profile found"}), 404
     code = str(uuid.uuid4())[:8].upper()
-    cur.execute(
-        """
-        INSERT INTO accountant_clients (accountant_id, invite_code, client_id, status)
-        VALUES (%s, %s, 0, 'invite')
-        ON CONFLICT DO NOTHING
-    """,
-        (profile["id"], code),
+   cur.execute("""
+    INSERT INTO accountant_clients (accountant_id, invite_code, client_id, status)
+    VALUES (%s, %s, NULL, 'invite')
+    ON CONFLICT DO NOTHING
+""", (profile["id"], code),
     )
     conn.commit()
     conn.close()
