@@ -20,7 +20,6 @@ const SPECIALTIES = [
 ];
 
 const SCORE_COLOR = (s:number) => s>=80?C.green:s>=50?C.yellow:C.red;
-const SCORE_LABEL = (s:number) => s>=80?'Compliant ✅':s>=50?'At Risk ⚠️':'Critical 🚨';
 
 function timeAgo(dateStr:string): string {
   const diff = Date.now()-new Date(dateStr).getTime();
@@ -40,12 +39,11 @@ function formatSize(bytes:number): string {
 }
 
 function fileIcon(t:string): string {
-  if (!t) return '📎';
+  if (!t||t==='request') return '📋';
   if (t.includes('pdf'))   return '📄';
   if (t.includes('image')) return '🖼️';
   if (t.includes('excel')||t.includes('spreadsheet')) return '📊';
   if (t.includes('word')||t.includes('document'))     return '📝';
-  if (t==='request') return '📋';
   return '📎';
 }
 
@@ -66,16 +64,17 @@ type Message = {
   message:string; created_at:string;
 };
 
-type Tab = 'clients'|'chat'|'docs'|'profile';
+type Screen = 'clients' | 'client_detail' | 'profile';
 
 export default function AccountantDashboard() {
-  const [tab, setTab]                     = useState<Tab>('clients');
+  const [screen, setScreen]               = useState<Screen>('clients');
+  const [clientTab, setClientTab]         = useState<'chat'|'docs'>('chat');
   const [currentUserId, setCurrentUserId] = useState(0);
   const [myProfile, setMyProfile]         = useState<any>(null);
   const [clients, setClients]             = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client|null>(null);
   const [clientDocs, setClientDocs]       = useState<Doc[]>([]);
-  const [clientMessages, setClientMessages] = useState<Message[]>([]);
+  const [messages, setMessages]           = useState<Message[]>([]);
   const [loading, setLoading]             = useState(true);
   const [generatedCode, setGeneratedCode] = useState('');
   const [msgInput, setMsgInput]           = useState('');
@@ -94,6 +93,7 @@ export default function AccountantDashboard() {
   const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]);
   const [saving, setSaving]               = useState(false);
 
+  // ── LOAD ──────────────────────────────────────────────────────────────────
   const loadCurrentUser = async () => {
     try {
       const res  = await fetch(`${API}/api/me`,{credentials:'include'});
@@ -142,15 +142,32 @@ export default function AccountantDashboard() {
     } catch {}
   };
 
-  const loadClientMessages = async (clientId:number, accountantProfileId:number) => {
+  const loadMessages = async (profileId:number) => {
     try {
-      const res  = await fetch(`${API}/api/accountants/${accountantProfileId}/messages`,{credentials:'include'});
+      const res  = await fetch(`${API}/api/accountants/${profileId}/messages`,{credentials:'include'});
       const data = await res.json();
       if (Array.isArray(data)) {
-        setClientMessages(data);
+        setMessages(data);
         setTimeout(()=>scrollRef.current?.scrollToEnd({animated:false}),200);
       }
     } catch {}
+  };
+
+  useEffect(()=>{
+    loadCurrentUser();
+    loadMyProfile();
+    loadClients();
+  },[]);
+
+  // ── ACTIONS ───────────────────────────────────────────────────────────────
+  const openClient = async (client:Client) => {
+    setSelectedClient(client);
+    setClientTab('chat');
+    setMessages([]);
+    setClientDocs([]);
+    setScreen('client_detail');
+    if (myProfile?.id) await loadMessages(myProfile.id);
+    await loadClientDocs(client.id);
   };
 
   const generateInvite = async () => {
@@ -158,7 +175,7 @@ export default function AccountantDashboard() {
       const res  = await fetch(`${API}/api/accountants/invite`,{method:'POST',credentials:'include'});
       const data = await res.json();
       if (data.code) setGeneratedCode(data.code);
-      else Alert.alert('Error','Could not generate code.');
+      else Alert.alert('Error','Could not generate code. Make sure your profile is set up.');
     } catch { Alert.alert('Error','Could not generate invite code.'); }
   };
 
@@ -174,7 +191,7 @@ export default function AccountantDashboard() {
       });
       const data = await res.json();
       if (res.ok) {
-        setClientMessages(prev=>[...prev,data]);
+        setMessages(prev=>[...prev,data]);
         setTimeout(()=>scrollRef.current?.scrollToEnd({animated:true}),100);
       }
     } catch {}
@@ -205,14 +222,16 @@ export default function AccountantDashboard() {
   const requestDoc = async () => {
     if (!requestNote.trim()||!selectedClient) return;
     try {
-      await fetch(`${API}/api/accountants/clients/${selectedClient.id}/request-doc`,{
+      const res = await fetch(`${API}/api/accountants/clients/${selectedClient.id}/request-doc`,{
         method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
         body: JSON.stringify({note:requestNote}),
       });
-      setShowRequestModal(false);
-      setRequestNote('');
-      Alert.alert('Request sent ✅','The client will be notified.');
-      await loadClientDocs(selectedClient.id);
+      if (res.ok) {
+        setShowRequestModal(false);
+        setRequestNote('');
+        Alert.alert('Request sent ✅','The client will be notified.');
+        await loadClientDocs(selectedClient.id);
+      }
     } catch { Alert.alert('Error','Could not send request.'); }
   };
 
@@ -233,301 +252,345 @@ export default function AccountantDashboard() {
       if (data.ok) {
         Alert.alert('Saved! 🎉','Your profile is now live.');
         await loadMyProfile();
-        setTab('clients');
+        setScreen('clients');
       }
     } catch { Alert.alert('Error','Could not save.'); }
     finally { setSaving(false); }
   };
 
-  const toggleSpec = (s:string) => setSelectedSpecs(prev=>prev.includes(s)?prev.filter(x=>x!==s):[...prev,s]);
+  const toggleSpec = (s:string) =>
+    setSelectedSpecs(prev=>prev.includes(s)?prev.filter(x=>x!==s):[...prev,s]);
 
-  const openClient = async (client:Client) => {
-    setSelectedClient(client);
-    await loadClientDocs(client.id);
-    if (myProfile?.id) await loadClientMessages(client.id, myProfile.id);
-    setTab('docs');
-  };
+  // ── SCREENS ───────────────────────────────────────────────────────────────
 
-  useEffect(()=>{ loadCurrentUser(); loadMyProfile(); loadClients(); },[]);
+  // CLIENT DETAIL
+  if (screen==='client_detail' && selectedClient) {
+    return (
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
 
-  // ── BOTTOM NAV ─────────────────────────────────────────────────────────────
-  const NAV = [
-    {key:'clients', icon:'👥', label:'Clients'},
-    {key:'chat',    icon:'💬', label:'Chat'},
-    {key:'docs',    icon:'📁', label:'Docs'},
-    {key:'profile', icon:'⚙️', label:'Profile'},
-  ] as const;
-
-  return (
-    <View style={styles.flex}>
-
-      {/* ── CLIENTS TAB ── */}
-      {tab==='clients' && (
-        <View style={styles.flex}>
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.headerTitle}>👥 My Clients</Text>
-              <Text style={styles.headerSub}>{clients.length} connected · tap to manage</Text>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={()=>setScreen('clients')} style={styles.backRow}>
+            <Text style={styles.backText}>← Clients</Text>
+          </TouchableOpacity>
+          <View style={styles.clientHeaderInfo}>
+            <View style={styles.clientHeaderAvatar}>
+              <Text style={styles.clientHeaderAvatarText}>
+                {selectedClient.business_name?.[0]?.toUpperCase()||'?'}
+              </Text>
             </View>
-            <TouchableOpacity style={styles.inviteBtn} onPress={generateInvite}>
-              <Text style={styles.inviteBtnText}>+ Invite</Text>
-            </TouchableOpacity>
+            <View>
+              <Text style={styles.clientHeaderName}>{selectedClient.business_name||selectedClient.email}</Text>
+              <Text style={styles.clientHeaderMeta}>
+                {selectedClient.compliance_score}% compliant · {selectedClient.urgent_deadlines} urgent
+              </Text>
+            </View>
           </View>
+        </View>
 
-          {generatedCode ? (
-            <TouchableOpacity style={styles.codeBanner} onLongPress={()=>setGeneratedCode('')}>
-              <Text style={styles.codeBannerLabel}>Share this code with your client</Text>
-              <Text style={styles.codeBannerCode}>{generatedCode}</Text>
-              <Text style={styles.codeBannerSub}>Tap and hold to dismiss</Text>
-            </TouchableOpacity>
-          ) : null}
+        {/* Sub-tabs */}
+        <View style={styles.subTabBar}>
+          <TouchableOpacity
+            style={[styles.subTab, clientTab==='chat'&&styles.subTabOn]}
+            onPress={()=>setClientTab('chat')}
+          >
+            <Text style={[styles.subTabText, clientTab==='chat'&&styles.subTabTextOn]}>💬 Chat</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.subTab, clientTab==='docs'&&styles.subTabOn]}
+            onPress={()=>setClientTab('docs')}
+          >
+            <Text style={[styles.subTabText, clientTab==='docs'&&styles.subTabTextOn]}>
+              📁 Documents {clientDocs.length>0?`(${clientDocs.length})`:''}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-          {loading ? (
-            <View style={styles.center}><ActivityIndicator color={C.ink} size="large"/></View>
-          ) : clients.length===0 ? (
-            <View style={styles.center}>
-              <Text style={styles.emptyIcon}>👥</Text>
-              <Text style={styles.emptyTitle}>No clients yet</Text>
-              <Text style={styles.emptySub}>Generate an invite code and share it with your clients to get started.</Text>
-              <TouchableOpacity style={styles.btn} onPress={generateInvite}>
-                <Text style={styles.btnText}>Generate Invite Code →</Text>
+        {/* ── CHAT ── */}
+        {clientTab==='chat' && (
+          <>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.messagesArea}
+              contentContainerStyle={{padding:16}}
+            >
+              {messages.length===0 ? (
+                <View style={styles.chatEmpty}>
+                  <Text style={styles.chatEmptyIcon}>💬</Text>
+                  <Text style={styles.chatEmptyTitle}>No messages yet</Text>
+                  <Text style={styles.chatEmptySub}>
+                    Start the conversation with {selectedClient.business_name}.
+                  </Text>
+                </View>
+              ) : messages.map(m=>{
+                const isMe = m.sender_id===currentUserId;
+                return (
+                  <View key={m.id} style={[styles.msgWrap,isMe&&styles.msgWrapMe]}>
+                    <View style={[styles.bubble,isMe&&styles.bubbleMe]}>
+                      {!isMe&&<Text style={styles.bubbleSender}>{m.sender_name}</Text>}
+                      <Text style={[styles.bubbleText,isMe&&styles.bubbleTextMe]}>{m.message}</Text>
+                      <Text style={[styles.bubbleTime,isMe&&styles.bubbleTimeMe]}>{timeAgo(m.created_at)}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={styles.msgInput}
+                placeholder="Type a message..."
+                placeholderTextColor={C.muted}
+                value={msgInput}
+                onChangeText={setMsgInput}
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.sendBtn,(!msgInput.trim()||sending)&&styles.sendBtnOff]}
+                onPress={sendMessage}
+                disabled={!msgInput.trim()||sending}
+              >
+                {sending
+                  ?<ActivityIndicator color="#fff" size="small"/>
+                  :<Text style={styles.sendBtnText}>→</Text>
+                }
               </TouchableOpacity>
             </View>
-          ) : (
+          </>
+        )}
+
+        {/* ── DOCS ── */}
+        {clientTab==='docs' && (
+          <>
+            <View style={styles.docActions}>
+              <TouchableOpacity
+                style={[styles.docActionBtn,{backgroundColor:C.gold}]}
+                onPress={uploadForClient}
+                disabled={uploading}
+              >
+                {uploading
+                  ?<ActivityIndicator color={C.ink} size="small"/>
+                  :<Text style={styles.docActionText}>📤 Upload Document</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.docActionBtn,{backgroundColor:C.surface,borderWidth:1.5,borderColor:C.ruled}]}
+                onPress={()=>setShowRequestModal(true)}
+              >
+                <Text style={[styles.docActionText,{color:C.ink}]}>📋 Request Document</Text>
+              </TouchableOpacity>
+            </View>
+
             <ScrollView style={styles.body}>
-              {clients.map(client=>(
-                <TouchableOpacity key={client.id} style={styles.clientCard} onPress={()=>openClient(client)} activeOpacity={0.85}>
-                  <View style={styles.clientCardLeft}>
-                    <View style={styles.clientAvatar}>
-                      <Text style={styles.clientAvatarText}>{client.business_name?.[0]?.toUpperCase()||'?'}</Text>
-                    </View>
+              {clientDocs.length===0 ? (
+                <View style={styles.docsEmpty}>
+                  <Text style={styles.chatEmptyIcon}>📂</Text>
+                  <Text style={styles.chatEmptyTitle}>No documents yet</Text>
+                  <Text style={styles.chatEmptySub}>Upload a document or request one from the client.</Text>
+                </View>
+              ) : clientDocs.map(doc=>(
+                <TouchableOpacity
+                  key={doc.id}
+                  style={[styles.docRow,!!doc.requested&&{borderColor:C.yellow,backgroundColor:'#fff8ee'}]}
+                  onPress={()=>doc.signed_url&&!doc.requested?Linking.openURL(doc.signed_url):null}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.docIcon}>{fileIcon(doc.file_type)}</Text>
+                  <View style={styles.docInfo}>
+                    <Text style={styles.docName} numberOfLines={1}>{doc.name}</Text>
+                    <Text style={styles.docMeta}>
+                      {doc.requested
+                        ?'⏳ Awaiting from client'
+                        :`${formatSize(doc.file_size)} · ${new Date(doc.uploaded_at).toLocaleDateString()}`
+                      }
+                    </Text>
                   </View>
-                  <View style={styles.clientCardBody}>
-                    <Text style={styles.clientName}>{client.business_name||client.email}</Text>
-                    <Text style={styles.clientMeta}>📍 {client.country||'—'} · {client.industry||'—'}</Text>
-                    <View style={styles.clientBadges}>
-                      {client.urgent_deadlines>0&&(
-                        <View style={[styles.badge,{backgroundColor:'#fff0ee',borderColor:C.red}]}>
-                          <Text style={[styles.badgeText,{color:C.red}]}>🚨 {client.urgent_deadlines} urgent</Text>
-                        </View>
-                      )}
-                      <View style={[styles.badge,{backgroundColor:C.bg,borderColor:C.ruled}]}>
-                        <Text style={[styles.badgeText,{color:C.muted}]}>📋 {client.pending_deadlines} pending</Text>
-                      </View>
-                      <View style={[styles.badge,{backgroundColor:C.bg,borderColor:C.ruled}]}>
-                        <Text style={[styles.badgeText,{color:C.muted}]}>📁 {client.document_count} docs</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <View style={[styles.scoreRing,{borderColor:SCORE_COLOR(client.compliance_score)}]}>
-                    <Text style={[styles.scoreRingPct,{color:SCORE_COLOR(client.compliance_score)}]}>{client.compliance_score}%</Text>
-                  </View>
+                  {!doc.requested&&<Text style={styles.docOpen}>↗</Text>}
                 </TouchableOpacity>
               ))}
               <View style={{height:20}}/>
             </ScrollView>
-          )}
-        </View>
-      )}
 
-      {/* ── CHAT TAB ── */}
-      {tab==='chat' && (
-        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>💬 Chat</Text>
-            {selectedClient&&<Text style={styles.headerSub}>with {selectedClient.business_name}</Text>}
-          </View>
-          {!selectedClient ? (
-            <View style={styles.center}>
-              <Text style={styles.emptyIcon}>💬</Text>
-              <Text style={styles.emptyTitle}>No client selected</Text>
-              <Text style={styles.emptySub}>Go to Clients tab and tap a client to start chatting.</Text>
-            </View>
-          ) : (
-            <>
-              <ScrollView ref={scrollRef} style={styles.messagesArea} contentContainerStyle={{padding:16}}>
-                {clientMessages.length===0 ? (
-                  <View style={styles.chatEmpty}>
-                    <Text style={styles.chatEmptyIcon}>💬</Text>
-                    <Text style={styles.chatEmptyTitle}>No messages yet</Text>
-                    <Text style={styles.chatEmptySub}>Start the conversation with {selectedClient.business_name}.</Text>
-                  </View>
-                ) : clientMessages.map(m=>{
-                  const isMe = m.sender_id===currentUserId;
-                  return (
-                    <View key={m.id} style={[styles.msgWrap,isMe&&styles.msgWrapMe]}>
-                      <View style={[styles.bubble,isMe&&styles.bubbleMe]}>
-                        {!isMe&&<Text style={styles.bubbleSender}>{m.sender_name}</Text>}
-                        <Text style={[styles.bubbleText,isMe&&styles.bubbleTextMe]}>{m.message}</Text>
-                        <Text style={[styles.bubbleTime,isMe&&styles.bubbleTimeMe]}>{timeAgo(m.created_at)}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-              <View style={styles.inputRow}>
-                <TextInput
-                  style={styles.msgInput}
-                  placeholder="Type a message..."
-                  placeholderTextColor={C.muted}
-                  value={msgInput}
-                  onChangeText={setMsgInput}
-                  multiline
-                />
-                <TouchableOpacity
-                  style={[styles.sendBtn,(!msgInput.trim()||sending)&&styles.sendBtnOff]}
-                  onPress={sendMessage}
-                  disabled={!msgInput.trim()||sending}
-                >
-                  {sending?<ActivityIndicator color="#fff" size="small"/>:<Text style={styles.sendBtnText}>→</Text>}
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
-        </KeyboardAvoidingView>
-      )}
-
-      {/* ── DOCS TAB ── */}
-      {tab==='docs' && (
-        <View style={styles.flex}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>📁 Documents</Text>
-            {selectedClient&&<Text style={styles.headerSub}>{selectedClient.business_name}</Text>}
-          </View>
-          {!selectedClient ? (
-            <View style={styles.center}>
-              <Text style={styles.emptyIcon}>📁</Text>
-              <Text style={styles.emptyTitle}>No client selected</Text>
-              <Text style={styles.emptySub}>Go to Clients tab and tap a client to view their documents.</Text>
-            </View>
-          ) : (
-            <>
-              <View style={styles.docActions}>
-                <TouchableOpacity
-                  style={[styles.docActionBtn,{backgroundColor:C.gold}]}
-                  onPress={uploadForClient}
-                  disabled={uploading}
-                >
-                  {uploading?<ActivityIndicator color={C.ink} size="small"/>:<Text style={styles.docActionText}>📤 Upload</Text>}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.docActionBtn,{backgroundColor:C.surface,borderWidth:1.5,borderColor:C.ruled}]}
-                  onPress={()=>setShowRequestModal(true)}
-                >
-                  <Text style={[styles.docActionText,{color:C.ink}]}>📋 Request</Text>
-                </TouchableOpacity>
-              </View>
-              <ScrollView style={styles.body}>
-                {clientDocs.length===0 ? (
-                  <View style={styles.center}>
-                    <Text style={styles.emptyIcon}>📂</Text>
-                    <Text style={styles.emptyTitle}>No documents yet</Text>
-                    <Text style={styles.emptySub}>Upload the first document or request one from the client.</Text>
-                  </View>
-                ) : clientDocs.map(doc=>(
+            {/* Request doc modal */}
+            <Modal visible={showRequestModal} animationType="slide" transparent onRequestClose={()=>setShowRequestModal(false)}>
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalCard}>
+                  <View style={styles.modalHandle}/>
+                  <Text style={styles.modalTitle}>Request a Document</Text>
+                  <Text style={styles.modalSub}>The client will see this in their Documents tab.</Text>
+                  <TextInput
+                    style={[styles.input,{height:80,textAlignVertical:'top',marginTop:12}]}
+                    placeholder="e.g. Q1 2025 invoices, bank statement..."
+                    placeholderTextColor={C.muted}
+                    value={requestNote}
+                    onChangeText={setRequestNote}
+                    multiline
+                    autoFocus
+                  />
                   <TouchableOpacity
-                    key={doc.id}
-                    style={[styles.docRow,doc.requested&&{borderColor:C.yellow,backgroundColor:'#fff8ee'}]}
-                    onPress={()=>doc.signed_url&&!doc.requested?Linking.openURL(doc.signed_url):null}
-                    activeOpacity={0.7}
+                    style={[styles.btn,!requestNote.trim()&&styles.btnOff]}
+                    onPress={requestDoc}
+                    disabled={!requestNote.trim()}
                   >
-                    <Text style={styles.docIcon}>{fileIcon(doc.file_type)}</Text>
-                    <View style={styles.docInfo}>
-                      <Text style={styles.docName} numberOfLines={1}>{doc.name}</Text>
-                      <Text style={styles.docMeta}>
-                        {doc.requested?'⏳ Awaiting from client':`${formatSize(doc.file_size)} · ${new Date(doc.uploaded_at).toLocaleDateString()}`}
-                      </Text>
-                    </View>
-                    {!doc.requested&&<Text style={styles.docOpen}>↗</Text>}
+                    <Text style={styles.btnText}>Send Request →</Text>
                   </TouchableOpacity>
-                ))}
-                <View style={{height:20}}/>
-              </ScrollView>
-
-              {/* Request doc modal */}
-              <Modal visible={showRequestModal} animationType="slide" transparent onRequestClose={()=>setShowRequestModal(false)}>
-                <View style={styles.modalOverlay}>
-                  <View style={styles.modalCard}>
-                    <View style={styles.modalHandle}/>
-                    <Text style={styles.modalTitle}>Request a Document</Text>
-                    <Text style={styles.modalSub}>The client will see this request in their Documents tab.</Text>
-                    <TextInput
-                      style={[styles.input,{height:80,textAlignVertical:'top',marginTop:12}]}
-                      placeholder="e.g. Q1 2025 invoices, March bank statement..."
-                      placeholderTextColor={C.muted}
-                      value={requestNote}
-                      onChangeText={setRequestNote}
-                      multiline
-                      autoFocus
-                    />
-                    <TouchableOpacity style={[styles.btn,!requestNote.trim()&&styles.btnOff]} onPress={requestDoc} disabled={!requestNote.trim()}>
-                      <Text style={styles.btnText}>Send Request →</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.cancelBtn} onPress={()=>setShowRequestModal(false)}>
-                      <Text style={styles.cancelBtnText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={()=>setShowRequestModal(false)}>
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
                 </View>
-              </Modal>
-            </>
-          )}
-        </View>
-      )}
-
-      {/* ── PROFILE TAB ── */}
-      {tab==='profile' && (
-        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>⚙️ My Profile</Text>
-            <Text style={styles.headerSub}>{myProfile?.exists?'Edit your public profile':'Create your profile to get clients'}</Text>
-          </View>
-          <View style={styles.pricingBanner}>
-            <Text style={styles.pricingBannerTitle}>💼 COMPLY Pro · €29/month</Text>
-            <Text style={styles.pricingBannerNote}>🎉 Free during beta — billing starts at launch</Text>
-          </View>
-          <ScrollView style={styles.body}>
-            <View style={styles.formCard}>
-              <FormField label="Display Name *" value={form.display_name} onChange={v=>setForm(f=>({...f,display_name:v}))} placeholder="e.g. Maria Silva, CPA"/>
-              <FormField label="Bio" value={form.bio} onChange={v=>setForm(f=>({...f,bio:v}))} placeholder="Tell businesses about your experience..." multiline/>
-              <FormField label="Country" value={form.country} onChange={v=>setForm(f=>({...f,country:v}))} placeholder="e.g. Portugal"/>
-              <FormField label="Languages" value={form.languages} onChange={v=>setForm(f=>({...f,languages:v}))} placeholder="e.g. Portuguese, English"/>
-              <FormField label="Years of Experience" value={form.years_experience} onChange={v=>setForm(f=>({...f,years_experience:v}))} placeholder="e.g. 8" keyboardType="numeric"/>
-              <FormField label="Certifications" value={form.certifications} onChange={v=>setForm(f=>({...f,certifications:v}))} placeholder="e.g. CPA, ACCA"/>
-              <FormField label="Monthly Price (€)" value={form.price_month} onChange={v=>setForm(f=>({...f,price_month:v}))} placeholder="e.g. 150" keyboardType="numeric"/>
-              <FormField label="Contact Email" value={form.contact_email} onChange={v=>setForm(f=>({...f,contact_email:v}))} placeholder="your@email.com" keyboardType="email-address"/>
-              <FormField label="WhatsApp (optional)" value={form.contact_whatsapp} onChange={v=>setForm(f=>({...f,contact_whatsapp:v}))} placeholder="+351 912 345 678" keyboardType="phone-pad"/>
-              <Text style={styles.fieldLabel}>Specialties</Text>
-              <View style={styles.specGrid}>
-                {SPECIALTIES.map(s=>(
-                  <TouchableOpacity key={s} style={[styles.specChip,selectedSpecs.includes(s)&&styles.specChipOn]} onPress={()=>toggleSpec(s)}>
-                    <Text style={[styles.specChipText,selectedSpecs.includes(s)&&styles.specChipTextOn]}>{s}</Text>
-                  </TouchableOpacity>
-                ))}
               </View>
-              <TouchableOpacity style={[styles.btn,saving&&styles.btnOff]} onPress={saveProfile} disabled={saving}>
-                {saving?<ActivityIndicator color="#fff"/>:<Text style={styles.btnText}>{myProfile?.exists?'Save Changes →':'Create Profile →'}</Text>}
-              </TouchableOpacity>
-            </View>
-            <View style={{height:40}}/>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      )}
+            </Modal>
+          </>
+        )}
+      </KeyboardAvoidingView>
+    );
+  }
 
-      {/* BOTTOM NAV */}
-      <View style={styles.bottomNav}>
-        {NAV.map(n=>(
-          <TouchableOpacity key={n.key} style={styles.navItem} onPress={()=>setTab(n.key as Tab)}>
-            <Text style={styles.navIcon}>{n.icon}</Text>
-            <Text style={[styles.navLabel,tab===n.key&&styles.navLabelOn]}>{n.label}</Text>
+  // PROFILE SCREEN
+  if (screen==='profile') {
+    return (
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={()=>setScreen('clients')} style={styles.backRow}>
+            <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
-        ))}
+          <Text style={styles.headerTitle}>
+            {myProfile?.exists?'Edit Profile':'Create Profile'}
+          </Text>
+        </View>
+
+        <View style={styles.pricingBanner}>
+          <Text style={styles.pricingBannerTitle}>💼 COMPLY Pro · €29/month</Text>
+          <Text style={styles.pricingBannerNote}>🎉 Free during beta</Text>
+        </View>
+
+        <ScrollView style={styles.body}>
+          <View style={styles.formCard}>
+            <F label="Display Name *" value={form.display_name} onChange={v=>setForm(f=>({...f,display_name:v}))} placeholder="e.g. Maria Silva, CPA"/>
+            <F label="Bio" value={form.bio} onChange={v=>setForm(f=>({...f,bio:v}))} placeholder="Describe your experience..." multiline/>
+            <F label="Country" value={form.country} onChange={v=>setForm(f=>({...f,country:v}))} placeholder="e.g. Portugal"/>
+            <F label="Languages" value={form.languages} onChange={v=>setForm(f=>({...f,languages:v}))} placeholder="e.g. Portuguese, English"/>
+            <F label="Years of Experience" value={form.years_experience} onChange={v=>setForm(f=>({...f,years_experience:v}))} placeholder="e.g. 8" keyboardType="numeric"/>
+            <F label="Certifications" value={form.certifications} onChange={v=>setForm(f=>({...f,certifications:v}))} placeholder="e.g. CPA, ACCA"/>
+            <F label="Monthly Price (€)" value={form.price_month} onChange={v=>setForm(f=>({...f,price_month:v}))} placeholder="e.g. 150" keyboardType="numeric"/>
+            <F label="Contact Email" value={form.contact_email} onChange={v=>setForm(f=>({...f,contact_email:v}))} placeholder="your@email.com" keyboardType="email-address"/>
+            <F label="WhatsApp" value={form.contact_whatsapp} onChange={v=>setForm(f=>({...f,contact_whatsapp:v}))} placeholder="+351 912 345 678" keyboardType="phone-pad"/>
+
+            <Text style={styles.fieldLabel}>Specialties</Text>
+            <View style={styles.specGrid}>
+              {SPECIALTIES.map(s=>(
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.specChip,selectedSpecs.includes(s)&&styles.specChipOn]}
+                  onPress={()=>toggleSpec(s)}
+                >
+                  <Text style={[styles.specChipText,selectedSpecs.includes(s)&&styles.specChipTextOn]}>{s}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity style={[styles.btn,saving&&styles.btnOff]} onPress={saveProfile} disabled={saving}>
+              {saving
+                ?<ActivityIndicator color="#fff"/>
+                :<Text style={styles.btnText}>{myProfile?.exists?'Save Changes →':'Create Profile →'}</Text>
+              }
+            </TouchableOpacity>
+          </View>
+          <View style={{height:40}}/>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  // CLIENTS LIST (default)
+  return (
+    <View style={styles.flex}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>👥 My Clients</Text>
+          <Text style={styles.headerSubLine}>{clients.length} connected client{clients.length!==1?'s':''}</Text>
+        </View>
+        <View style={styles.headerBtns}>
+          <TouchableOpacity style={[styles.pill,{backgroundColor:C.gold,marginRight:8}]} onPress={generateInvite}>
+            <Text style={styles.pillText}>+ Invite</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.pill,{backgroundColor:'rgba(255,255,255,0.12)'}]} onPress={()=>setScreen('profile')}>
+            <Text style={[styles.pillText,{color:'#ccc'}]}>⚙️ Profile</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
+      {/* Invite code banner */}
+      {generatedCode ? (
+        <TouchableOpacity style={styles.codeBanner} onLongPress={()=>setGeneratedCode('')} activeOpacity={0.9}>
+          <Text style={styles.codeBannerLabel}>Share this code with your client</Text>
+          <Text style={styles.codeBannerCode}>{generatedCode}</Text>
+          <Text style={styles.codeBannerSub}>Long press to dismiss</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator color={C.ink} size="large"/></View>
+      ) : clients.length===0 ? (
+        <View style={styles.center}>
+          <Text style={styles.emptyIcon}>👥</Text>
+          <Text style={styles.emptyTitle}>No clients yet</Text>
+          <Text style={styles.emptySub}>
+            Tap "+ Invite" to generate a code and share it with your clients. They enter it in their app to connect with you.
+          </Text>
+          <TouchableOpacity style={styles.btn} onPress={generateInvite}>
+            <Text style={styles.btnText}>Generate Invite Code →</Text>
+          </TouchableOpacity>
+          {!myProfile?.exists&&(
+            <TouchableOpacity style={[styles.btn,{backgroundColor:C.gold,marginTop:8}]} onPress={()=>setScreen('profile')}>
+              <Text style={[styles.btnText,{color:C.ink}]}>Set Up Your Profile First →</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
+        <ScrollView style={styles.body}>
+          {clients.map(client=>(
+            <TouchableOpacity
+              key={client.id}
+              style={styles.clientCard}
+              onPress={()=>openClient(client)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.clientAvatar}>
+                <Text style={styles.clientAvatarText}>{client.business_name?.[0]?.toUpperCase()||'?'}</Text>
+              </View>
+              <View style={styles.clientBody}>
+                <Text style={styles.clientName}>{client.business_name||client.email}</Text>
+                <Text style={styles.clientMeta}>📍 {client.country||'—'} · {client.industry||'—'}</Text>
+                <View style={styles.badges}>
+                  {client.urgent_deadlines>0&&(
+                    <View style={[styles.badge,{backgroundColor:'#fff0ee',borderColor:C.red}]}>
+                      <Text style={[styles.badgeText,{color:C.red}]}>🚨 {client.urgent_deadlines} urgent</Text>
+                    </View>
+                  )}
+                  <View style={[styles.badge,{backgroundColor:C.bg,borderColor:C.ruled}]}>
+                    <Text style={[styles.badgeText,{color:C.muted}]}>📋 {client.pending_deadlines} pending</Text>
+                  </View>
+                  <View style={[styles.badge,{backgroundColor:C.bg,borderColor:C.ruled}]}>
+                    <Text style={[styles.badgeText,{color:C.muted}]}>📁 {client.document_count}</Text>
+                  </View>
+                </View>
+              </View>
+              <View style={[styles.scoreRing,{borderColor:SCORE_COLOR(client.compliance_score)}]}>
+                <Text style={[styles.scoreRingPct,{color:SCORE_COLOR(client.compliance_score)}]}>
+                  {client.compliance_score}%
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+          <View style={{height:20}}/>
+        </ScrollView>
+      )}
     </View>
   );
 }
 
-function FormField({label,value,onChange,placeholder,multiline,keyboardType}:any) {
+// ── FORM FIELD ────────────────────────────────────────────────────────────────
+function F({label,value,onChange,placeholder,multiline,keyboardType}:any) {
   return (
     <>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -545,93 +608,95 @@ function FormField({label,value,onChange,placeholder,multiline,keyboardType}:any
   );
 }
 
-const NAV = [
-  {key:'clients', icon:'👥', label:'Clients'},
-  {key:'chat',    icon:'💬', label:'Chat'},
-  {key:'docs',    icon:'📁', label:'Docs'},
-  {key:'profile', icon:'⚙️', label:'Profile'},
-] as const;
-
+// ── STYLES ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  flex:               { flex:1, backgroundColor:C.bg },
-  body:               { flex:1, padding:14 },
-  center:             { flex:1, alignItems:'center', justifyContent:'center', padding:40 },
-  header:             { backgroundColor:C.ink, paddingHorizontal:20, paddingTop:58, paddingBottom:16, flexDirection:'row', alignItems:'flex-end', justifyContent:'space-between' },
-  headerTitle:        { fontSize:22, fontWeight:'900', color:'#fff' },
-  headerSub:          { fontSize:11, color:'#666', marginTop:2 },
-  inviteBtn:          { backgroundColor:C.gold, borderRadius:8, paddingHorizontal:14, paddingVertical:9 },
-  inviteBtnText:      { color:C.ink, fontSize:13, fontWeight:'700' },
-  codeBanner:         { backgroundColor:C.ink, padding:16, alignItems:'center', borderBottomWidth:1, borderBottomColor:C.gold },
-  codeBannerLabel:    { fontSize:11, color:'#888', marginBottom:6 },
-  codeBannerCode:     { fontSize:32, fontWeight:'900', color:C.gold, letterSpacing:8 },
-  codeBannerSub:      { fontSize:10, color:'#555', marginTop:6 },
-  clientCard:         { backgroundColor:C.surface, borderWidth:1.5, borderColor:C.ruled, borderRadius:14, padding:14, marginBottom:10, flexDirection:'row', gap:12, alignItems:'center' },
-  clientCardLeft:     { alignItems:'center' },
-  clientCardBody:     { flex:1 },
-  clientAvatar:       { width:48, height:48, borderRadius:24, backgroundColor:C.ink, alignItems:'center', justifyContent:'center' },
-  clientAvatarText:   { color:C.gold, fontSize:20, fontWeight:'900' },
-  clientName:         { fontSize:15, fontWeight:'700', color:C.ink, marginBottom:2 },
-  clientMeta:         { fontSize:11, color:C.muted, marginBottom:6 },
-  clientBadges:       { flexDirection:'row', gap:6, flexWrap:'wrap' },
-  badge:              { borderWidth:1.5, borderRadius:20, paddingHorizontal:8, paddingVertical:3 },
-  badgeText:          { fontSize:10, fontWeight:'600' },
-  scoreRing:          { width:52, height:52, borderRadius:26, borderWidth:2.5, alignItems:'center', justifyContent:'center' },
-  scoreRingPct:       { fontSize:13, fontWeight:'900' },
-  emptyIcon:          { fontSize:48, marginBottom:12 },
-  emptyTitle:         { fontSize:18, fontWeight:'700', color:C.ink, marginBottom:8, textAlign:'center' },
-  emptySub:           { fontSize:13, color:C.muted, textAlign:'center', lineHeight:20, marginBottom:20 },
-  messagesArea:       { flex:1 },
-  chatEmpty:          { alignItems:'center', paddingTop:60 },
-  chatEmptyIcon:      { fontSize:40, marginBottom:12 },
-  chatEmptyTitle:     { fontSize:16, fontWeight:'700', color:C.ink, marginBottom:6 },
-  chatEmptySub:       { fontSize:13, color:C.muted, textAlign:'center', lineHeight:20 },
-  msgWrap:            { marginBottom:10, alignItems:'flex-start' },
-  msgWrapMe:          { alignItems:'flex-end' },
-  bubble:             { backgroundColor:C.surface, borderWidth:1.5, borderColor:C.ruled, borderRadius:14, borderBottomLeftRadius:2, padding:12, maxWidth:'80%' },
-  bubbleMe:           { backgroundColor:C.ink, borderColor:C.ink, borderBottomLeftRadius:14, borderBottomRightRadius:2 },
-  bubbleSender:       { fontSize:10, color:C.gold, fontWeight:'700', marginBottom:4 },
-  bubbleText:         { fontSize:14, color:C.ink, lineHeight:20 },
-  bubbleTextMe:       { color:'#fff' },
-  bubbleTime:         { fontSize:10, color:C.muted, marginTop:4 },
-  bubbleTimeMe:       { color:'#888' },
-  inputRow:           { flexDirection:'row', gap:8, padding:12, backgroundColor:C.surface, borderTopWidth:1, borderTopColor:C.ruled, paddingBottom:Platform.OS==='ios'?28:12 },
-  msgInput:           { flex:1, backgroundColor:C.bg, borderWidth:1.5, borderColor:C.ruled, borderRadius:8, padding:12, fontSize:14, color:C.ink, maxHeight:100 },
-  sendBtn:            { backgroundColor:C.ink, borderRadius:8, paddingHorizontal:16, alignItems:'center', justifyContent:'center' },
-  sendBtnOff:         { opacity:0.4 },
-  sendBtnText:        { color:'#fff', fontSize:18, fontWeight:'700' },
-  docActions:         { flexDirection:'row', gap:10, padding:14, backgroundColor:C.surface, borderBottomWidth:1, borderBottomColor:C.ruled },
-  docActionBtn:       { flex:1, borderRadius:8, padding:12, alignItems:'center' },
-  docActionText:      { fontSize:13, fontWeight:'700', color:C.ink },
-  docRow:             { backgroundColor:C.surface, borderWidth:1.5, borderColor:C.ruled, borderRadius:10, padding:12, flexDirection:'row', alignItems:'center', gap:12, marginBottom:8 },
-  docIcon:            { fontSize:24 },
-  docInfo:            { flex:1 },
-  docName:            { fontSize:13, fontWeight:'500', color:C.ink, marginBottom:2 },
-  docMeta:            { fontSize:11, color:C.muted },
-  docOpen:            { fontSize:18, color:C.muted },
-  pricingBanner:      { backgroundColor:'#1a1714', padding:14, alignItems:'center', borderBottomWidth:1, borderBottomColor:C.gold },
-  pricingBannerTitle: { fontSize:14, color:C.gold, fontWeight:'700', marginBottom:4 },
-  pricingBannerNote:  { fontSize:11, color:'#888' },
-  formCard:           { backgroundColor:C.surface, borderWidth:1.5, borderColor:C.ruled, borderRadius:14, padding:20 },
-  fieldLabel:         { fontSize:10, color:C.muted, textTransform:'uppercase', letterSpacing:1.5, marginBottom:6, marginTop:4 },
-  input:              { backgroundColor:C.bg, borderWidth:1.5, borderColor:C.ruled, borderRadius:8, padding:12, fontSize:14, color:C.ink, marginBottom:14 },
-  specGrid:           { flexDirection:'row', flexWrap:'wrap', gap:8, marginBottom:20 },
-  specChip:           { borderWidth:1.5, borderColor:C.ruled, borderRadius:20, paddingHorizontal:12, paddingVertical:7 },
-  specChipOn:         { backgroundColor:C.ink, borderColor:C.ink },
-  specChipText:       { fontSize:12, color:C.muted },
-  specChipTextOn:     { color:'#fff' },
-  btn:                { backgroundColor:C.ink, borderRadius:8, padding:14, alignItems:'center', marginBottom:10 },
-  btnOff:             { opacity:0.4 },
-  btnText:            { color:'#fff', fontSize:15, fontWeight:'600' },
-  cancelBtn:          { alignItems:'center', padding:10 },
-  cancelBtnText:      { color:C.muted, fontSize:14 },
-  modalOverlay:       { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'flex-end' },
-  modalCard:          { backgroundColor:C.surface, borderTopLeftRadius:20, borderTopRightRadius:20, padding:24, paddingBottom:40 },
-  modalHandle:        { width:40, height:4, backgroundColor:C.ruled, borderRadius:2, alignSelf:'center', marginBottom:16 },
-  modalTitle:         { fontSize:20, fontWeight:'700', color:C.ink, marginBottom:4 },
-  modalSub:           { fontSize:13, color:C.muted },
-  bottomNav:          { flexDirection:'row', backgroundColor:C.ink, borderTopWidth:1, borderTopColor:'#2a2520', paddingBottom:Platform.OS==='ios'?20:8 },
-  navItem:            { flex:1, alignItems:'center', paddingVertical:10 },
-  navIcon:            { fontSize:20, marginBottom:2 },
-  navLabel:           { fontSize:9, color:'#555', textTransform:'uppercase', letterSpacing:1 },
-  navLabelOn:         { color:C.gold },
+  flex:                { flex:1, backgroundColor:C.bg },
+  body:                { flex:1, padding:14 },
+  center:              { flex:1, alignItems:'center', justifyContent:'center', padding:40 },
+  header:              { backgroundColor:C.ink, paddingHorizontal:20, paddingTop:58, paddingBottom:16, flexDirection:'row', alignItems:'flex-end', justifyContent:'space-between' },
+  headerTitle:         { fontSize:22, fontWeight:'900', color:'#fff' },
+  headerSubLine:       { fontSize:11, color:'#666', marginTop:2 },
+  headerBtns:          { flexDirection:'row', alignItems:'center' },
+  backRow:             { marginBottom:8 },
+  backText:            { color:'#888', fontSize:13 },
+  clientHeaderInfo:    { flexDirection:'row', alignItems:'center', gap:10 },
+  clientHeaderAvatar:  { width:40, height:40, borderRadius:20, backgroundColor:C.gold, alignItems:'center', justifyContent:'center' },
+  clientHeaderAvatarText: { color:C.ink, fontSize:18, fontWeight:'900' },
+  clientHeaderName:    { fontSize:16, fontWeight:'700', color:'#fff' },
+  clientHeaderMeta:    { fontSize:11, color:'#666', marginTop:2 },
+  pill:                { borderRadius:20, paddingHorizontal:14, paddingVertical:7 },
+  pillText:            { color:C.ink, fontSize:12, fontWeight:'700' },
+  codeBanner:          { backgroundColor:C.ink, padding:16, alignItems:'center', borderBottomWidth:2, borderBottomColor:C.gold },
+  codeBannerLabel:     { fontSize:11, color:'#888', marginBottom:6 },
+  codeBannerCode:      { fontSize:32, fontWeight:'900', color:C.gold, letterSpacing:8 },
+  codeBannerSub:       { fontSize:10, color:'#555', marginTop:6 },
+  clientCard:          { backgroundColor:C.surface, borderWidth:1.5, borderColor:C.ruled, borderRadius:14, padding:14, marginBottom:10, flexDirection:'row', alignItems:'center', gap:12 },
+  clientAvatar:        { width:50, height:50, borderRadius:25, backgroundColor:C.ink, alignItems:'center', justifyContent:'center', flexShrink:0 },
+  clientAvatarText:    { color:C.gold, fontSize:22, fontWeight:'900' },
+  clientBody:          { flex:1 },
+  clientName:          { fontSize:15, fontWeight:'700', color:C.ink, marginBottom:2 },
+  clientMeta:          { fontSize:11, color:C.muted, marginBottom:6 },
+  badges:              { flexDirection:'row', gap:6, flexWrap:'wrap' },
+  badge:               { borderWidth:1.5, borderRadius:20, paddingHorizontal:8, paddingVertical:3 },
+  badgeText:           { fontSize:10, fontWeight:'600' },
+  scoreRing:           { width:52, height:52, borderRadius:26, borderWidth:2.5, alignItems:'center', justifyContent:'center', flexShrink:0 },
+  scoreRingPct:        { fontSize:13, fontWeight:'900' },
+  emptyIcon:           { fontSize:52, marginBottom:12 },
+  emptyTitle:          { fontSize:18, fontWeight:'700', color:C.ink, marginBottom:8, textAlign:'center' },
+  emptySub:            { fontSize:13, color:C.muted, textAlign:'center', lineHeight:20, marginBottom:20 },
+  subTabBar:           { flexDirection:'row', backgroundColor:C.surface, borderBottomWidth:2, borderBottomColor:C.ruled },
+  subTab:              { flex:1, paddingVertical:14, alignItems:'center', borderBottomWidth:2.5, borderBottomColor:'transparent' },
+  subTabOn:            { borderBottomColor:C.ink },
+  subTabText:          { fontSize:14, color:C.muted, fontWeight:'500' },
+  subTabTextOn:        { color:C.ink, fontWeight:'700' },
+  messagesArea:        { flex:1 },
+  chatEmpty:           { alignItems:'center', paddingTop:60, paddingHorizontal:20 },
+  chatEmptyIcon:       { fontSize:44, marginBottom:12 },
+  chatEmptyTitle:      { fontSize:16, fontWeight:'700', color:C.ink, marginBottom:6 },
+  chatEmptySub:        { fontSize:13, color:C.muted, textAlign:'center', lineHeight:20 },
+  docsEmpty:           { alignItems:'center', paddingTop:40, paddingHorizontal:20 },
+  msgWrap:             { marginBottom:10, alignItems:'flex-start' },
+  msgWrapMe:           { alignItems:'flex-end' },
+  bubble:              { backgroundColor:C.surface, borderWidth:1.5, borderColor:C.ruled, borderRadius:14, borderBottomLeftRadius:2, padding:12, maxWidth:'80%' },
+  bubbleMe:            { backgroundColor:C.ink, borderColor:C.ink, borderBottomLeftRadius:14, borderBottomRightRadius:2 },
+  bubbleSender:        { fontSize:10, color:C.gold, fontWeight:'700', marginBottom:4 },
+  bubbleText:          { fontSize:14, color:C.ink, lineHeight:20 },
+  bubbleTextMe:        { color:'#fff' },
+  bubbleTime:          { fontSize:10, color:C.muted, marginTop:4 },
+  bubbleTimeMe:        { color:'#888' },
+  inputRow:            { flexDirection:'row', gap:8, padding:12, backgroundColor:C.surface, borderTopWidth:1, borderTopColor:C.ruled, paddingBottom:Platform.OS==='ios'?28:12 },
+  msgInput:            { flex:1, backgroundColor:C.bg, borderWidth:1.5, borderColor:C.ruled, borderRadius:8, padding:12, fontSize:14, color:C.ink, maxHeight:100 },
+  sendBtn:             { backgroundColor:C.ink, borderRadius:8, paddingHorizontal:16, alignItems:'center', justifyContent:'center' },
+  sendBtnOff:          { opacity:0.4 },
+  sendBtnText:         { color:'#fff', fontSize:18, fontWeight:'700' },
+  docActions:          { flexDirection:'row', gap:10, padding:14, backgroundColor:C.surface, borderBottomWidth:1, borderBottomColor:C.ruled },
+  docActionBtn:        { flex:1, borderRadius:8, padding:12, alignItems:'center' },
+  docActionText:       { fontSize:13, fontWeight:'700', color:C.ink },
+  docRow:              { backgroundColor:C.surface, borderWidth:1.5, borderColor:C.ruled, borderRadius:10, padding:12, flexDirection:'row', alignItems:'center', gap:12, marginBottom:8 },
+  docIcon:             { fontSize:26 },
+  docInfo:             { flex:1 },
+  docName:             { fontSize:13, fontWeight:'500', color:C.ink, marginBottom:2 },
+  docMeta:             { fontSize:11, color:C.muted },
+  docOpen:             { fontSize:20, color:C.muted },
+  pricingBanner:       { backgroundColor:C.ink, padding:14, alignItems:'center', borderBottomWidth:1, borderBottomColor:C.gold },
+  pricingBannerTitle:  { fontSize:14, color:C.gold, fontWeight:'700', marginBottom:2 },
+  pricingBannerNote:   { fontSize:11, color:'#888' },
+  formCard:            { backgroundColor:C.surface, borderWidth:1.5, borderColor:C.ruled, borderRadius:14, padding:20 },
+  fieldLabel:          { fontSize:10, color:C.muted, textTransform:'uppercase', letterSpacing:1.5, marginBottom:6, marginTop:4 },
+  input:               { backgroundColor:C.bg, borderWidth:1.5, borderColor:C.ruled, borderRadius:8, padding:12, fontSize:14, color:C.ink, marginBottom:14 },
+  specGrid:            { flexDirection:'row', flexWrap:'wrap', gap:8, marginBottom:20 },
+  specChip:            { borderWidth:1.5, borderColor:C.ruled, borderRadius:20, paddingHorizontal:12, paddingVertical:7 },
+  specChipOn:          { backgroundColor:C.ink, borderColor:C.ink },
+  specChipText:        { fontSize:12, color:C.muted },
+  specChipTextOn:      { color:'#fff' },
+  btn:                 { backgroundColor:C.ink, borderRadius:8, padding:14, alignItems:'center', marginBottom:10 },
+  btnOff:              { opacity:0.4 },
+  btnText:             { color:'#fff', fontSize:15, fontWeight:'600' },
+  cancelBtn:           { alignItems:'center', padding:10 },
+  cancelBtnText:       { color:C.muted, fontSize:14 },
+  modalOverlay:        { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'flex-end' },
+  modalCard:           { backgroundColor:C.surface, borderTopLeftRadius:20, borderTopRightRadius:20, padding:24, paddingBottom:40 },
+  modalHandle:         { width:40, height:4, backgroundColor:C.ruled, borderRadius:2, alignSelf:'center', marginBottom:16 },
+  modalTitle:          { fontSize:20, fontWeight:'700', color:C.ink, marginBottom:4 },
+  modalSub:            { fontSize:13, color:C.muted },
 });
