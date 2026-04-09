@@ -134,6 +134,7 @@ async function scheduleAllReminders(deadlines:Deadline[]) {
 // ── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const [tab, setTab]               = useState<'deadlines'|'feed'|'add'|'ai'>('deadlines');
+  const [accountType, setAccountType] = useState('business');
   const [deadlines, setDeadlines]   = useState<Deadline[]>([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -185,6 +186,7 @@ export default function HomeScreen() {
       if (res.ok) {
         setUserName(data.business_name || data.email || 'My Business');
         setMonthlyRevenue(data.monthly_revenue || 5000);
+        setAccountType(data.account_type || 'business');
       }
     } catch {}
   };
@@ -557,9 +559,9 @@ export default function HomeScreen() {
             <Text style={styles.navIcon}>📁</Text>
             <Text style={styles.navLabel}>Docs</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={()=>router.push('/accountants')}>
+          <TouchableOpacity style={styles.navItem} onPress={()=>router.push(accountType==='accountant'?'/accountant_dashboard':'/accountants')}>
             <Text style={styles.navIcon}>👔</Text>
-            <Text style={styles.navLabel}>Experts</Text>
+            <Text style={styles.navLabel}>{accountType==='accountant'?'Dashboard':'Experts'}</Text>
           </TouchableOpacity>
         </View>
 
