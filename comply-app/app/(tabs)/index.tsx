@@ -187,10 +187,13 @@ export default function HomeScreen() {
         setUserName(data.business_name || data.email || 'My Business');
         setMonthlyRevenue(data.monthly_revenue || 5000);
         setAccountType(data.account_type || 'business');
+        // Redirect accountants to their dashboard
+        if (data.account_type === 'accountant') {
+          router.replace('/accountant_dashboard');
+        }
       }
     } catch {}
   };
-
   const loadFeed = async () => {
     setFeedLoading(true);
     try {
