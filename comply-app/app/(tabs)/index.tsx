@@ -659,7 +659,6 @@ export default function HomeScreen() {
 }
 
 // ── COMPLY AI COMPONENT ──────────────────────────────────────────────────────
-const API = 'https://comply.up.railway.app';
 
 function ComplyAI({ monthlyRevenue, userName }: { monthlyRevenue:number; userName:string }) {
   const [messages, setMessages]   = useState<{role:string;content:string;actions?:any[]}[]>([]);
