@@ -701,6 +701,7 @@ function ComplyAI({ monthlyRevenue, userName }: { monthlyRevenue:number; userNam
 
     try {
       const res = await fetch(`${API}/api/ai/chat`,{
+        console.log('Sending to:', `${API}/api/ai/chat`, 'message:', q);
         method:'POST',
         headers:{'Content-Type':'application/json'},
         credentials:'include',
