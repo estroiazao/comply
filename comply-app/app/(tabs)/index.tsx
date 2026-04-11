@@ -155,6 +155,7 @@ export default function HomeScreen() {
     {who:'bot', text:'Hi! Ask me anything about taxes, licenses, payroll, or deadlines.'}
   ]);
   const [aiLoading, setAiLoading] = useState(false);
+  // AI state managed in ComplyAI component
   const [selected, setSelected]   = useState<Deadline|null>(null);
   const [livePenalty, setLivePenalty] = useState(0);
   const penaltyTimer = useRef<any>(null);
@@ -187,13 +188,10 @@ export default function HomeScreen() {
         setUserName(data.business_name || data.email || 'My Business');
         setMonthlyRevenue(data.monthly_revenue || 5000);
         setAccountType(data.account_type || 'business');
-        // Redirect accountants to their dashboard
-        if (data.account_type === 'accountant') {
-          router.replace('/accountant_dashboard');
-        }
       }
     } catch {}
   };
+
   const loadFeed = async () => {
     setFeedLoading(true);
     try {
@@ -516,36 +514,7 @@ export default function HomeScreen() {
 
         {/* ── AI TAB ── */}
         {tab==='ai' && (
-          <View style={styles.aiWrap}>
-            <View style={styles.aiHeader}>
-              <View style={styles.aiIcon}><Text style={{fontSize:16}}>🤖</Text></View>
-              <View>
-                <Text style={styles.aiName}>COMPLY Assistant</Text>
-                <Text style={styles.aiSub}>Ask anything about compliance</Text>
-              </View>
-            </View>
-            <ScrollView style={styles.aiMessages}>
-              {aiMessages.map((m,i)=>(
-                <View key={i} style={[styles.aiMsg,m.who==='user'&&styles.aiMsgUser]}>
-                  <Text style={[styles.aiMsgText,m.who==='user'&&styles.aiMsgTextUser]}>{m.text}</Text>
-                </View>
-              ))}
-              {aiLoading&&<View style={styles.aiMsg}><Text style={styles.aiMsgText}>...</Text></View>}
-            </ScrollView>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.suggestions}>
-              {['IVA Portugal?','IRS penalty?','Payroll taxes?','Sales tax US?'].map(q=>(
-                <TouchableOpacity key={q} style={styles.suggestion} onPress={()=>setAiInput(q)}>
-                  <Text style={styles.suggestionText}>{q}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <View style={styles.aiInputRow}>
-              <TextInput style={styles.aiInput} placeholder="Ask anything..." placeholderTextColor="#444" value={aiInput} onChangeText={setAiInput} onSubmitEditing={sendAI} />
-              <TouchableOpacity style={styles.aiSendBtn} onPress={sendAI}>
-                <Text style={styles.aiSendText}>→</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          <ComplyAI monthlyRevenue={monthlyRevenue} userName={userName} />
         )}
 
         {/* BOTTOM NAV */}
@@ -688,6 +657,255 @@ export default function HomeScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+// ── COMPLY AI COMPONENT ──────────────────────────────────────────────────────
+const API = 'https://comply.up.railway.app';
+
+function ComplyAI({ monthlyRevenue, userName }: { monthlyRevenue:number; userName:string }) {
+  const [messages, setMessages]   = useState<{role:string;content:string;actions?:any[]}[]>([]);
+  const [input, setInput]         = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [usage, setUsage]         = useState(0);
+  const [limit, setLimit]         = useState(10);
+  const [limitReached, setLimitReached] = useState(false);
+  const scrollRef = useRef<any>(null);
+
+  const SUGGESTIONS = [
+    'What deadlines do I have this month?',
+    'How much IVA do I owe?',
+    'Am I at risk of any fines?',
+    'What taxes do I need to pay?',
+    'Do I need an accountant?',
+  ];
+
+  useEffect(()=>{
+    // Load usage
+    fetch(`${API}/api/ai/usage`,{credentials:'include'})
+      .then(r=>r.json())
+      .then(d=>{ setUsage(d.usage||0); setLimit(d.limit||10); })
+      .catch(()=>{});
+    // Welcome message
+    setMessages([{
+      role:'assistant',
+      content:`Hi ${userName ? userName.split(' ')[0] : 'there'}! 👋 I'm COMPLY AI — I know your deadlines, your country, and your business. Ask me anything about taxes, compliance, or what you owe.`,
+    }]);
+  },[]);
+
+  const send = async (text?:string) => {
+    const q = (text||input).trim();
+    if (!q||loading) return;
+    setInput('');
+    const newMessages = [...messages, {role:'user',content:q}];
+    setMessages(newMessages);
+    setLoading(true);
+    setTimeout(()=>scrollRef.current?.scrollToEnd({animated:true}),100);
+
+    try {
+      const res = await fetch(`${API}/api/ai/chat`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        credentials:'include',
+        body: JSON.stringify({
+          message: q,
+          history: newMessages.slice(-10).map(m=>({role:m.role,content:m.content})),
+        }),
+      });
+      const data = await res.json();
+
+      if (res.status===429) {
+        setLimitReached(true);
+        setMessages(prev=>[...prev,{role:'assistant',content:data.message||'Monthly limit reached. Upgrade to Pro for unlimited access.'}]);
+      } else if (data.reply) {
+        setMessages(prev=>[...prev,{role:'assistant',content:data.reply,actions:data.actions||[]}]);
+        setUsage(data.usage||0);
+        setLimit(data.limit||10);
+      } else {
+        setMessages(prev=>[...prev,{role:'assistant',content:'Sorry, I had trouble with that. Please try again.'}]);
+      }
+    } catch {
+      setMessages(prev=>[...prev,{role:'assistant',content:'Could not connect. Please check your internet connection.'}]);
+    } finally {
+      setLoading(false);
+      setTimeout(()=>scrollRef.current?.scrollToEnd({animated:true}),100);
+    }
+  };
+
+  const handleAction = async (action:any) => {
+    if (action.type==='CREATE_DEADLINE') {
+      try {
+        const parts = action.date.split('-');
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        await fetch(`${API}/deadlines`,{
+          method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+          body: JSON.stringify({
+            title: action.title,
+            due_date: action.date,
+            month: months[parseInt(parts[1])-1]||'',
+            day: parts[2]||'',
+            category: 'tax',
+            description: 'Created by COMPLY AI',
+            penalty: '',
+          }),
+        });
+        setMessages(prev=>[...prev,{role:'assistant',content:`✅ Deadline "${action.title}" created for ${action.date}!`}]);
+      } catch {
+        setMessages(prev=>[...prev,{role:'assistant',content:'Could not create deadline. Please add it manually.'}]);
+      }
+    } else if (action.type==='FIND_ACCOUNTANT') {
+      setMessages(prev=>[...prev,{role:'assistant',content:'Go to the 👔 Experts tab to find a qualified accountant in your country.'}]);
+    } else if (action.type==='UPLOAD_DOC') {
+      setMessages(prev=>[...prev,{role:'assistant',content:'Go to the 📁 Docs tab to upload your documents securely.'}]);
+    }
+  };
+
+  return (
+    <View style={aiStyles.flex}>
+      {/* Header */}
+      <View style={aiStyles.header}>
+        <View style={aiStyles.headerLeft}>
+          <View style={aiStyles.aiAvatar}>
+            <Text style={aiStyles.aiAvatarText}>✦</Text>
+          </View>
+          <View>
+            <Text style={aiStyles.aiName}>COMPLY AI</Text>
+            <Text style={aiStyles.aiSub}>Your compliance assistant</Text>
+          </View>
+        </View>
+        <View style={aiStyles.usageChip}>
+          <Text style={aiStyles.usageText}>{Math.max(0,limit-usage)} left</Text>
+        </View>
+      </View>
+
+      {/* Messages */}
+      <ScrollView
+        ref={scrollRef}
+        style={aiStyles.messages}
+        contentContainerStyle={{padding:16}}
+      >
+        {messages.map((m,i)=>(
+          <View key={i} style={[aiStyles.msgWrap,m.role==='user'&&aiStyles.msgWrapUser]}>
+            <View style={[aiStyles.bubble,m.role==='user'&&aiStyles.bubbleUser]}>
+              <Text style={[aiStyles.bubbleText,m.role==='user'&&aiStyles.bubbleTextUser]}>
+                {m.content}
+              </Text>
+            </View>
+            {/* Action buttons */}
+            {m.actions&&m.actions.length>0&&(
+              <View style={aiStyles.actions}>
+                {m.actions.map((a,j)=>(
+                  <TouchableOpacity key={j} style={aiStyles.actionBtn} onPress={()=>handleAction(a)}>
+                    <Text style={aiStyles.actionBtnText}>
+                      {a.type==='CREATE_DEADLINE'?`➕ Add "${a.title}"`
+                       :a.type==='FIND_ACCOUNTANT'?'👔 Find Accountant'
+                       :'📁 Upload Document'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        ))}
+        {loading&&(
+          <View style={aiStyles.msgWrap}>
+            <View style={aiStyles.bubble}>
+              <View style={aiStyles.typingDots}>
+                <ActivityIndicator color={C.muted} size="small"/>
+                <Text style={aiStyles.typingText}>COMPLY AI is thinking...</Text>
+              </View>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Suggestions (only show when no messages beyond welcome) */}
+      {messages.length<=1&&(
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={aiStyles.suggestions}>
+          {SUGGESTIONS.map(s=>(
+            <TouchableOpacity key={s} style={aiStyles.suggestionChip} onPress={()=>send(s)}>
+              <Text style={aiStyles.suggestionText}>{s}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* Usage bar */}
+      {usage>0&&(
+        <View style={aiStyles.usageBar}>
+          <View style={[aiStyles.usageFill,{width:`${Math.min((usage/limit)*100,100)}%` as any, backgroundColor: usage>=limit?C.red:C.green}]}/>
+        </View>
+      )}
+
+      {/* Input */}
+      {limitReached ? (
+        <View style={aiStyles.limitBox}>
+          <Text style={aiStyles.limitText}>🔒 You've used all {limit} free questions this month.</Text>
+          <Text style={aiStyles.limitSub}>Upgrade to Pro for unlimited COMPLY AI access.</Text>
+        </View>
+      ) : (
+        <View style={aiStyles.inputRow}>
+          <TextInput
+            style={aiStyles.input}
+            placeholder="Ask about your taxes, deadlines, compliance..."
+            placeholderTextColor={C.muted}
+            value={input}
+            onChangeText={setInput}
+            multiline
+            onSubmitEditing={()=>send()}
+          />
+          <TouchableOpacity
+            style={[aiStyles.sendBtn,(!input.trim()||loading)&&aiStyles.sendBtnOff]}
+            onPress={()=>send()}
+            disabled={!input.trim()||loading}
+          >
+            <Text style={aiStyles.sendBtnText}>→</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const C_AI = {
+  bg:'#f2ece0', surface:'#faf6ef', ruled:'#e0d8c8', ink:'#1a1714',
+  red:'#d94f3d', green:'#2a7d4f', yellow:'#c49a0a', muted:'#8c7e6a', gold:'#c49a0a',
+};
+
+const aiStyles = StyleSheet.create({
+  flex:            { flex:1, backgroundColor:'#0f0f0f' },
+  header:          { backgroundColor:'#0f0f0f', paddingHorizontal:20, paddingTop:0, paddingBottom:14, flexDirection:'row', alignItems:'center', justifyContent:'space-between', borderBottomWidth:1, borderBottomColor:'#1a1a1a' },
+  headerLeft:      { flexDirection:'row', alignItems:'center', gap:10 },
+  aiAvatar:        { width:38, height:38, borderRadius:19, backgroundColor:C_AI.gold, alignItems:'center', justifyContent:'center' },
+  aiAvatarText:    { color:'#000', fontSize:18, fontWeight:'900' },
+  aiName:          { fontSize:16, fontWeight:'700', color:'#fff' },
+  aiSub:           { fontSize:11, color:'#555' },
+  usageChip:       { backgroundColor:'#1a1a1a', borderRadius:20, paddingHorizontal:10, paddingVertical:5 },
+  usageText:       { fontSize:11, color:'#888' },
+  messages:        { flex:1 },
+  msgWrap:         { marginBottom:12, alignItems:'flex-start' },
+  msgWrapUser:     { alignItems:'flex-end' },
+  bubble:          { backgroundColor:'#1a1a1a', borderRadius:16, borderBottomLeftRadius:2, padding:14, maxWidth:'85%' },
+  bubbleUser:      { backgroundColor:C_AI.gold, borderBottomLeftRadius:16, borderBottomRightRadius:2 },
+  bubbleText:      { fontSize:14, color:'#ddd', lineHeight:22 },
+  bubbleTextUser:  { color:'#000' },
+  actions:         { marginTop:8, gap:6 },
+  actionBtn:       { backgroundColor:'#1a1a1a', borderWidth:1, borderColor:C_AI.gold, borderRadius:8, paddingHorizontal:14, paddingVertical:10 },
+  actionBtnText:   { color:C_AI.gold, fontSize:13, fontWeight:'600' },
+  typingDots:      { flexDirection:'row', alignItems:'center', gap:8 },
+  typingText:      { fontSize:13, color:'#555' },
+  suggestions:     { paddingHorizontal:16, paddingVertical:10, borderTopWidth:1, borderTopColor:'#1a1a1a' },
+  suggestionChip:  { backgroundColor:'#1a1a1a', borderWidth:1, borderColor:'#2a2a2a', borderRadius:20, paddingHorizontal:14, paddingVertical:8, marginRight:8 },
+  suggestionText:  { color:'#888', fontSize:12 },
+  usageBar:        { height:2, backgroundColor:'#1a1a1a', marginHorizontal:0 },
+  usageFill:       { height:'100%' },
+  limitBox:        { backgroundColor:'#1a0505', borderTopWidth:1, borderTopColor:C_AI.red, padding:16, alignItems:'center' },
+  limitText:       { color:'#ff9999', fontSize:13, fontWeight:'600', marginBottom:4 },
+  limitSub:        { color:'#ff6666', fontSize:12 },
+  inputRow:        { flexDirection:'row', gap:8, padding:12, backgroundColor:'#0f0f0f', borderTopWidth:1, borderTopColor:'#1a1a1a', paddingBottom:Platform.OS==='ios'?28:12 },
+  input:           { flex:1, backgroundColor:'#1a1a1a', borderWidth:1, borderColor:'#2a2a2a', borderRadius:12, padding:12, fontSize:14, color:'#ddd', maxHeight:100 },
+  sendBtn:         { backgroundColor:C_AI.gold, borderRadius:12, paddingHorizontal:16, alignItems:'center', justifyContent:'center' },
+  sendBtnOff:      { opacity:0.3 },
+  sendBtnText:     { color:'#000', fontSize:18, fontWeight:'900' },
+});
 
 // ── COMPONENTS ───────────────────────────────────────────────────────────────
 function Block({title,count,children}:any) {

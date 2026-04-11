@@ -24,6 +24,9 @@ DATABASE_URL = os.environ.get(
 )
 
 SUPABASE_URL = "https://uxibzrkqukrdnrfeujdc.supabase.co"
+
+GEMINI_API_KEY = "AIzaSyA2Nqe1jCRtJpBO8teZ0p-buEqJ3ZkmXRQ"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4aWJ6cmtxdWtyZG5yZmV1amRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTI1NTY4NCwiZXhwIjoyMDkwODMxNjg0fQ.UV-lG3UWRtKA9W-y9gyxAFkJzWmWTdK8LZ9ONOS4-eM"
 SUPABASE_BUCKET = "comply-docs"
 
@@ -239,6 +242,15 @@ def init_db():
         )
     except:
         pass
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ai_usage (
+            id         SERIAL PRIMARY KEY,
+            user_id    INTEGER NOT NULL,
+            month      TEXT NOT NULL,
+            count      INTEGER DEFAULT 0,
+            UNIQUE(user_id, month)
+        )
+    """)
 
     conn.commit()
     conn.close()
@@ -4190,3 +4202,209 @@ def request_document(client_id):
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
+
+
+# ── COMPLY AI ─────────────────────────────────────────────────────────────────
+
+COMPLY_SYSTEM_PROMPT = """You are COMPLY AI, an expert business compliance assistant built into the COMPLY app.
+You help small business owners navigate taxes, licenses, payroll deadlines, and compliance requirements worldwide.
+
+Your personality:
+- Friendly, clear, and direct — no jargon unless necessary
+- Proactive — you warn about risks and suggest next steps
+- Specific — you always tailor answers to the user's country, industry, and revenue
+- Action-oriented — you suggest concrete actions the user can take inside the app
+
+You have access to the user's profile:
+{user_context}
+
+You have access to their current deadlines:
+{deadlines_context}
+
+Guidelines:
+- Always reference the user's specific country, industry, and revenue when relevant
+- If a deadline is urgent or overdue, proactively mention it
+- When appropriate, suggest one of these actions at the end of your response:
+  [CREATE_DEADLINE: title, due_date YYYY-MM-DD] — to create a new deadline
+  [FIND_ACCOUNTANT] — to suggest finding an accountant
+  [UPLOAD_DOC] — to suggest uploading a document
+- Keep responses concise — 2-4 paragraphs max
+- Never make up specific legal advice — recommend consulting a professional for complex situations
+- You speak the user's language if they write in Portuguese, Spanish, French etc."""
+
+
+@app.route("/api/ai/chat", methods=["POST"])
+def ai_chat():
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    uid = current_user_id()
+    data = request.get_json()
+    message = data.get("message", "").strip()
+    history = data.get("history", [])
+
+    if not message:
+        return jsonify({"error": "Empty message"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # ── Check usage limit ────────────────────────────────────────────────────
+    from datetime import datetime
+
+    month = datetime.now().strftime("%Y-%m")
+    cur.execute(
+        """
+        INSERT INTO ai_usage (user_id, month, count) VALUES (%s, %s, 1)
+        ON CONFLICT (user_id, month) DO UPDATE SET count = ai_usage.count + 1
+        RETURNING count
+    """,
+        (uid, month),
+    )
+    usage = cur.fetchone()["count"]
+    conn.commit()
+
+    # Get user profile
+    cur.execute("SELECT * FROM users WHERE id=%s", (uid,))
+    user = cur.fetchone()
+
+    # Check if pro (for now everyone gets 10 free)
+    is_pro = False  # TODO: add pro flag when Stripe is integrated
+    limit = 999 if is_pro else 10
+
+    if usage > limit:
+        conn.close()
+        return jsonify(
+            {
+                "error": "limit_reached",
+                "message": f"You've used all {limit} free AI questions this month. Upgrade to Pro for unlimited access.",
+                "usage": usage,
+                "limit": limit,
+            }
+        ), 429
+
+    # Get deadlines context
+    cur.execute(
+        """
+        SELECT title, due_date, category, status, done
+        FROM deadlines WHERE user_id=%s ORDER BY due_date LIMIT 20
+    """,
+        (uid,),
+    )
+    deadlines = cur.fetchall()
+    conn.close()
+
+    # Build context
+    user_context = f"""
+- Name/Business: {user["business_name"] or user["email"]}
+- Country: {user["country"] or "Unknown"}
+- Industry: {user["industry"] or "Unknown"}
+- Employees: {user["employees"] or "Unknown"}
+- Monthly Revenue: €{user["monthly_revenue"] or 0}
+- AI questions used this month: {usage}/{limit}
+"""
+
+    deadlines_context = (
+        "\n".join(
+            [
+                f"- {'✅' if d['done'] else '⚠️' if d['status'] == 'urgent' else '📋'} {d['title']} (due {d['due_date']}, {d['category']}, {'done' if d['done'] else d['status']})"
+                for d in deadlines
+            ]
+        )
+        or "No deadlines found."
+    )
+
+    system = COMPLY_SYSTEM_PROMPT.format(
+        user_context=user_context,
+        deadlines_context=deadlines_context,
+    )
+
+    # Build Gemini request
+    gemini_contents = []
+
+    # Add history
+    for msg in history[-10:]:  # last 10 messages for context
+        role = "user" if msg["role"] == "user" else "model"
+        gemini_contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+    # Add current message
+    gemini_contents.append({"role": "user", "parts": [{"text": message}]})
+
+    gemini_body = {
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": gemini_contents,
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 1024,
+        },
+    }
+
+    # Call Gemini
+    try:
+        req_body = _json.dumps(gemini_body).encode()
+        req = urllib.request.Request(
+            f"{GEMINI_URL}?key={GEMINI_API_KEY}", data=req_body, method="POST"
+        )
+        req.add_header("Content-Type", "application/json")
+
+        with urllib.request.urlopen(req, timeout=30) as res:
+            result = _json.loads(res.read())
+
+        ai_text = result["candidates"][0]["content"]["parts"][0]["text"]
+
+        # Parse suggested actions
+        actions = []
+        import re
+
+        create_matches = re.findall(
+            r"\[CREATE_DEADLINE:\s*(.+?),\s*(\d{4}-\d{2}-\d{2})\]", ai_text
+        )
+        for title, date in create_matches:
+            actions.append(
+                {"type": "CREATE_DEADLINE", "title": title.strip(), "date": date}
+            )
+        if "[FIND_ACCOUNTANT]" in ai_text:
+            actions.append({"type": "FIND_ACCOUNTANT"})
+        if "[UPLOAD_DOC]" in ai_text:
+            actions.append({"type": "UPLOAD_DOC"})
+
+        # Clean action tags from response
+        clean_text = re.sub(r"\[CREATE_DEADLINE:[^\]]+\]", "", ai_text)
+        clean_text = (
+            clean_text.replace("[FIND_ACCOUNTANT]", "")
+            .replace("[UPLOAD_DOC]", "")
+            .strip()
+        )
+
+        return jsonify(
+            {
+                "reply": clean_text,
+                "actions": actions,
+                "usage": usage,
+                "limit": limit,
+            }
+        )
+
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()
+        return jsonify({"error": f"AI error: {e.code}", "detail": error_body}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ai/usage", methods=["GET"])
+def get_ai_usage():
+    if not logged_in():
+        return jsonify({"error": "Unauthorized"}), 401
+    from datetime import datetime
+
+    uid = current_user_id()
+    month = datetime.now().strftime("%Y-%m")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT count FROM ai_usage WHERE user_id=%s AND month=%s", (uid, month)
+    )
+    row = cur.fetchone()
+    conn.close()
+    return jsonify({"usage": row["count"] if row else 0, "limit": 10})
