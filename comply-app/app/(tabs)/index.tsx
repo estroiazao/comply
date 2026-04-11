@@ -721,8 +721,8 @@ function ComplyAI({ monthlyRevenue, userName }: { monthlyRevenue:number; userNam
       } else {
         setMessages(prev=>[...prev,{role:'assistant',content:'Sorry, I had trouble with that. Please try again.'}]);
       }
-    } catch {
-      setMessages(prev=>[...prev,{role:'assistant',content:'Could not connect. Please check your internet connection.'}]);
+    } catch (e:any) {
+      setMessages(prev=>[...prev,{role:'assistant',content:`Error: ${e?.message || String(e)}`}]);
     } finally {
       setLoading(false);
       setTimeout(()=>scrollRef.current?.scrollToEnd({animated:true}),100);
