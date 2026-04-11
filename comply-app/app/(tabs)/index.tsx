@@ -659,6 +659,7 @@ export default function HomeScreen() {
 }
 
 // ── COMPLY AI COMPONENT ──────────────────────────────────────────────────────
+const API = 'https://comply.up.railway.app';
 
 function ComplyAI({ monthlyRevenue, userName }: { monthlyRevenue:number; userName:string }) {
   const [messages, setMessages]   = useState<{role:string;content:string;actions?:any[]}[]>([]);
@@ -722,7 +723,7 @@ function ComplyAI({ monthlyRevenue, userName }: { monthlyRevenue:number; userNam
         setMessages(prev=>[...prev,{role:'assistant',content:'Sorry, I had trouble with that. Please try again.'}]);
       }
     } catch (e:any) {
-      setMessages(prev=>[...prev,{role:'assistant',content:`Error: ${e?.message || String(e)}`}]);
+      setMessages(prev=>[...prev,{role:'assistant',content:`Network error: ${e?.message || String(e)}`}]);
     } finally {
       setLoading(false);
       setTimeout(()=>scrollRef.current?.scrollToEnd({animated:true}),100);
